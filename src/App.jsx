@@ -12,7 +12,7 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
-
+ 
 const FILTERS = [
   { label: 'All', value: 'All', icon: Sparkles },
   { label: 'YouTube', value: 'YouTube', icon: Film },
@@ -20,18 +20,18 @@ const FILTERS = [
   { label: 'Shorts/Reels', value: 'Shorts/Reels', icon: Smartphone },
   { label: 'Motion Graphics', value: 'Motion Graphics', icon: Clapperboard },
 ];
-
+ 
 const WHATSAPP_URL = 'https://wa.me/8801591190612';
-
+ 
 export default function App() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeFilter, setActiveFilter] = useState('All');
-
+ 
   const [profileData, setProfileData] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
-
+ 
   const [theme, setTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       const stored = window.localStorage.getItem('theme');
@@ -39,7 +39,7 @@ export default function App() {
     }
     return 'dark';
   });
-
+ 
   useEffect(() => {
     const root = document.documentElement;
     if (theme === 'dark') {
@@ -49,7 +49,7 @@ export default function App() {
     }
     window.localStorage.setItem('theme', theme);
   }, [theme]);
-
+ 
   useEffect(() => {
     async function fetchProjects() {
       setLoading(true);
@@ -57,7 +57,7 @@ export default function App() {
         .from('projects')
         .select('id, title, description, category, video_url, thumbnail_url')
         .order('id', { ascending: false });
-
+ 
       if (error) {
         console.error('Error fetching projects:', error);
         setError(error.message);
@@ -66,14 +66,14 @@ export default function App() {
       }
       setLoading(false);
     }
-
+ 
     async function fetchProfile() {
       setProfileLoading(true);
       const { data, error } = await supabase
         .from('profile')
         .select('name, bio, image_url')
         .single();
-
+ 
       if (error) {
         console.error('Error fetching profile:', error);
       } else {
@@ -81,16 +81,16 @@ export default function App() {
       }
       setProfileLoading(false);
     }
-
+ 
     fetchProjects();
     fetchProfile();
   }, []);
-
+ 
   const filteredProjects =
     activeFilter === 'All'
       ? projects
       : projects.filter((p) => p.category === activeFilter);
-
+ 
   return (
     <div className="min-h-screen bg-white text-neutral-900 transition-colors duration-300 selection:bg-indigo-500/30 dark:bg-[#0a0a0b] dark:text-neutral-100">
       {/* Ambient background glow (dark mode only) */}
@@ -99,7 +99,7 @@ export default function App() {
         <div className="absolute top-1/3 -right-40 h-[400px] w-[400px] rounded-full bg-purple-600/10 blur-[100px]" />
         <div className="absolute bottom-0 left-0 h-[300px] w-[500px] rounded-full bg-blue-600/5 blur-[100px]" />
       </div>
-
+ 
       <Nav theme={theme} setTheme={setTheme} />
       <Hero profileData={profileData} profileLoading={profileLoading} />
       <WorkSection
@@ -114,12 +114,12 @@ export default function App() {
     </div>
   );
 }
-
+ 
 /* ---------------------------------- Nav ---------------------------------- */
-
+ 
 function Nav({ theme, setTheme }) {
   const isDark = theme === 'dark';
-
+ 
   return (
     <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/80 backdrop-blur-lg transition-colors duration-300 dark:border-neutral-900 dark:bg-[#0a0a0b]/80">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5 sm:px-10">
@@ -131,7 +131,7 @@ function Nav({ theme, setTheme }) {
             EDIT<span className="text-indigo-500">STUDIO</span>
           </span>
         </div>
-
+ 
         <nav className="hidden items-center gap-8 text-sm text-neutral-500 dark:text-neutral-400 sm:flex">
           <a href="#work" className="transition hover:text-neutral-900 dark:hover:text-white">
             Work
@@ -140,7 +140,7 @@ function Nav({ theme, setTheme }) {
             Contact
           </a>
         </nav>
-
+ 
         <div className="flex items-center gap-3">
           <a
             href={WHATSAPP_URL}
@@ -151,7 +151,7 @@ function Nav({ theme, setTheme }) {
           >
             <MessageCircle className="h-4 w-4" />
           </a>
-
+ 
           <button
             onClick={() => setTheme(isDark ? 'light' : 'dark')}
             aria-label="Toggle theme"
@@ -159,7 +159,7 @@ function Nav({ theme, setTheme }) {
           >
             {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
-
+ 
           <a
             href="#contact"
             className="hidden rounded-full border border-neutral-300 px-4 py-2 text-xs font-medium text-neutral-600 transition hover:border-indigo-500 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-300 dark:hover:text-white sm:inline-block sm:text-sm"
@@ -171,12 +171,12 @@ function Nav({ theme, setTheme }) {
     </header>
   );
 }
-
+ 
 /* ---------------------------------- Hero ---------------------------------- */
-
+ 
 function Hero({ profileData, profileLoading }) {
   const [imgFailed, setImgFailed] = useState(false);
-
+ 
   const name = profileData?.name || '';
   const bio = profileData?.bio || '';
   const imageUrl = profileData?.image_url || '';
@@ -189,7 +189,7 @@ function Hero({ profileData, profileLoading }) {
         .join('')
         .toUpperCase()
     : 'E';
-
+ 
   return (
     <section className="relative z-10 mx-auto max-w-3xl px-6 pb-24 pt-16 text-center sm:px-10 sm:pb-32 sm:pt-24">
       {/* Availability badge */}
@@ -197,7 +197,7 @@ function Hero({ profileData, profileLoading }) {
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
         Currently booking Q3 projects
       </div>
-
+ 
       {/* Profile photo */}
       <div className="mx-auto mb-8 flex justify-center">
         <div className="relative">
@@ -218,7 +218,7 @@ function Hero({ profileData, profileLoading }) {
           </div>
         </div>
       </div>
-
+ 
       {profileLoading ? (
         <div className="mx-auto space-y-4">
           <div className="mx-auto h-4 w-40 animate-pulse rounded bg-neutral-100 dark:bg-neutral-900" />
@@ -232,21 +232,21 @@ function Hero({ profileData, profileLoading }) {
               {name}
             </h1>
           )}
-
+ 
           <p className="mx-auto mt-3 max-w-2xl text-3xl font-bold leading-tight tracking-tight text-neutral-900 dark:text-white sm:text-5xl md:text-6xl">
             Crafting stories that{' '}
             <span className="bg-gradient-to-r from-indigo-400 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
               move people.
             </span>
           </p>
-
+ 
           <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-lg">
             {bio ||
               'A professional video editor specializing in cinematic storytelling, high-retention YouTube content, and scroll-stopping short-form edits.'}
           </p>
         </>
       )}
-
+ 
       <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
         <a
           href="#work"
@@ -262,7 +262,7 @@ function Hero({ profileData, profileLoading }) {
           Start a Project
         </a>
       </div>
-
+ 
       <div className="mx-auto mt-16 grid max-w-md grid-cols-3 gap-6 border-t border-neutral-200 pt-8 dark:border-neutral-800">
         <Stat value="150+" label="Projects Delivered" />
         <Stat value="4.5M+" label="Views Generated" />
@@ -271,7 +271,7 @@ function Hero({ profileData, profileLoading }) {
     </section>
   );
 }
-
+ 
 function Stat({ value, label }) {
   return (
     <div>
@@ -284,9 +284,9 @@ function Stat({ value, label }) {
     </div>
   );
 }
-
+ 
 /* -------------------------------- WorkSection -------------------------------- */
-
+ 
 function WorkSection({ activeFilter, setActiveFilter, projects, loading, error }) {
   return (
     <section id="work" className="relative z-10 border-t border-neutral-200 dark:border-neutral-900">
@@ -301,18 +301,18 @@ function WorkSection({ activeFilter, setActiveFilter, projects, loading, error }
               Selected Work
             </h2>
           </div>
-
+ 
           <FilterBar activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
         </div>
-
+ 
         <ProjectGrid projects={projects} loading={loading} error={error} />
       </div>
     </section>
   );
 }
-
+ 
 /* -------------------------------- FilterBar -------------------------------- */
-
+ 
 function FilterBar({ activeFilter, setActiveFilter }) {
   return (
     <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
@@ -336,9 +336,9 @@ function FilterBar({ activeFilter, setActiveFilter }) {
     </div>
   );
 }
-
+ 
 /* -------------------------------- ProjectGrid -------------------------------- */
-
+ 
 function ProjectGrid({ projects, loading, error }) {
   if (loading) {
     return (
@@ -352,7 +352,7 @@ function ProjectGrid({ projects, loading, error }) {
       </div>
     );
   }
-
+ 
   if (error) {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 px-6 py-16 text-center dark:border-red-900/40 dark:bg-red-950/20">
@@ -362,7 +362,7 @@ function ProjectGrid({ projects, loading, error }) {
       </div>
     );
   }
-
+ 
   if (projects.length === 0) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-6 py-16 text-center dark:border-neutral-800 dark:bg-neutral-900/30">
@@ -372,7 +372,7 @@ function ProjectGrid({ projects, loading, error }) {
       </div>
     );
   }
-
+ 
   return (
     <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
       {projects.map((project) => (
@@ -381,10 +381,10 @@ function ProjectGrid({ projects, loading, error }) {
     </div>
   );
 }
-
+ 
 function ProjectCard({ project }) {
   const { title, description, category, video_url, thumbnail_url } = project;
-
+ 
   return (
     <a
       href={video_url}
@@ -406,17 +406,17 @@ function ProjectCard({ project }) {
             <Film className="h-8 w-8" />
           </div>
         )}
-
+ 
         {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent opacity-70 transition-opacity duration-300 group-hover:opacity-95" />
-
+ 
         {/* Play button */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-14 w-14 scale-90 items-center justify-center rounded-full bg-white/10 backdrop-blur-md ring-1 ring-white/30 transition-all duration-300 group-hover:scale-100 group-hover:bg-indigo-500 group-hover:ring-indigo-500">
             <Play className="ml-0.5 h-5 w-5 fill-white text-white" />
           </div>
         </div>
-
+ 
         {/* Category tag */}
         {category && (
           <span className="absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-200 backdrop-blur">
@@ -424,7 +424,7 @@ function ProjectCard({ project }) {
           </span>
         )}
       </div>
-
+ 
       {/* Info */}
       <div className="flex flex-1 flex-col justify-between p-5">
         <div>
@@ -437,7 +437,7 @@ function ProjectCard({ project }) {
             </p>
           )}
         </div>
-
+ 
         <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-neutral-600 transition-colors group-hover:text-indigo-500 dark:text-neutral-300 dark:group-hover:text-violet-400">
           Watch Full Edit
           <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -446,9 +446,9 @@ function ProjectCard({ project }) {
     </a>
   );
 }
-
+ 
 /* -------------------------------- CTASection -------------------------------- */
-
+ 
 function CTASection() {
   return (
     <section id="contact" className="relative z-10 border-t border-neutral-200 dark:border-neutral-900">
@@ -462,16 +462,16 @@ function CTASection() {
         <p className="mx-auto mt-4 max-w-md text-base text-neutral-500 dark:text-neutral-400 sm:text-lg">
           Available for freelance and long-term editing partnerships.
         </p>
-
+ 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <a
-            href="mailto:hello@editstudio.com"
+            href="mailto:itouhidul491@gmail.com"
             className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-8 py-4 text-sm font-semibold text-white transition hover:bg-indigo-600 sm:text-base"
           >
             <Mail className="h-4 w-4" />
-            hello@editstudio.com
+            itouhidul491@gmail.com
           </a>
-
+ 
           <a
             href={WHATSAPP_URL}
             target="_blank"
@@ -486,9 +486,9 @@ function CTASection() {
     </section>
   );
 }
-
+ 
 /* --------------------------------- Footer --------------------------------- */
-
+ 
 function Footer() {
   return (
     <footer className="relative z-10 border-t border-neutral-200 dark:border-neutral-900">
