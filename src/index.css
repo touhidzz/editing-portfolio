@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+body {
+  background-color: #0b0f19;
+  color: #f3f4f6;
+  font-family: sans-serif;
+}
+
+@utility input-base {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #404040;
+  background-color: rgba(23, 23, 23, 0.6);
+  padding: 0.625rem 1rem;
+  color: #ffffff;
+  outline: none;
+  transition: all 0.2s;
+  
+  &:focus {
+    border-color: #f97316;
+    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+  }
+}
+
+
+@custom-variant dark (&:where(.dark, .dark *));
