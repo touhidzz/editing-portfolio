@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { Trash2, Loader2, Plus, Film, Lock, LogOut, ClipboardList, LayoutGrid } from 'lucide-react';
 
-const CATEGORIES = ['YouTube', 'Cinematic', 'Shorts/Reels', 'Motion Graphics'];
+const CATEGORIES = ['YouTube', 'Cinematic', 'Shorts/Reels', 'Documentary', 'Motion Graphics'];
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'In Review', 'Delivered', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Unpaid', 'Partial', 'Paid'];
 
