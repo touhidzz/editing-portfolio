@@ -74,7 +74,7 @@ export default function App() {
       setProfileLoading(true);
       const { data, error } = await supabase
         .from('profile')
-        .select('name, bio, image_url')
+        .select('name, bio, image_url, projects_delivered, views_generated, client_retention')
         .single();
 
       if (error) {
@@ -98,9 +98,9 @@ export default function App() {
     <div className="min-h-screen bg-white text-neutral-900 transition-colors duration-300 selection:bg-indigo-500/30 dark:bg-[#0a0a0b] dark:text-neutral-100">
       {/* Ambient background glow (dark mode only) */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden opacity-0 transition-opacity duration-500 dark:opacity-100">
-        <div className="absolute -top-40 left-[8%] h-[480px] w-[480px] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute top-1/4 -right-32 h-[420px] w-[420px] rounded-full bg-violet-600/10 blur-[110px]" />
-        <div className="absolute bottom-0 left-1/3 h-[300px] w-[400px] rounded-full bg-fuchsia-600/5 blur-[100px]" />
+        <div className="absolute -top-40 left-1/2 h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-indigo-600/10 blur-[120px]" />
+        <div className="absolute top-1/3 -right-40 h-[400px] w-[400px] rounded-full bg-violet-600/10 blur-[100px]" />
+        <div className="absolute bottom-0 left-0 h-[300px] w-[500px] rounded-full bg-fuchsia-600/5 blur-[100px]" />
       </div>
 
       <Nav theme={theme} setTheme={setTheme} />
@@ -186,6 +186,10 @@ function Hero({ profileData, profileLoading }) {
   const name = profileData?.name || '';
   const bio = profileData?.bio || DEFAULT_BIO;
   const imageUrl = profileData?.image_url || '';
+  const projectsDelivered = profileData?.projects_delivered || '150+';
+  const viewsGenerated = profileData?.views_generated || '4.5M+';
+  const clientRetention = profileData?.client_retention || '98%';
+
   const initials = name
     ? name
         .split(' ')
@@ -197,69 +201,18 @@ function Hero({ profileData, profileLoading }) {
     : 'PN';
 
   return (
-    <section className="relative z-10 mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 px-6 py-16 sm:px-10 sm:py-24 lg:grid-cols-[1.15fr_0.85fr] lg:gap-16">
-      {/* Left: text content */}
-      <div className="text-center lg:text-left">
-        <div className="mx-auto mb-7 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-medium text-neutral-500 backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400 lg:mx-0">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-          Currently booking Q3 projects
-        </div>
-
-        {profileLoading ? (
-          <div className="space-y-4">
-            <div className="mx-auto h-4 w-48 animate-pulse rounded bg-neutral-100 dark:bg-neutral-900 lg:mx-0" />
-            <div className="mx-auto h-16 w-full max-w-lg animate-pulse rounded-lg bg-neutral-100 dark:bg-neutral-900 lg:mx-0" />
-            <div className="mx-auto h-4 w-full max-w-md animate-pulse rounded bg-neutral-100 dark:bg-neutral-900 lg:mx-0" />
-          </div>
-        ) : (
-          <>
-            {name && (
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-500">
-                Hi, I'm {name}
-              </p>
-            )}
-
-            <h1 className="text-4xl font-bold leading-[1.08] tracking-tight text-neutral-900 dark:text-white sm:text-5xl md:text-6xl">
-              Crafting stories that
-              <span className="block bg-gradient-to-r from-indigo-400 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
-                move people.
-              </span>
-            </h1>
-
-            <p className="mx-auto mt-6 max-w-lg text-base leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-lg lg:mx-0">
-              {bio}
-            </p>
-          </>
-        )}
-
-        <div className="mt-9 flex flex-wrap items-center justify-center gap-4 lg:justify-start">
-          <a
-            href="#work"
-            className="group inline-flex items-center gap-2 rounded-full bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-white dark:text-black dark:hover:bg-indigo-500 dark:hover:text-white"
-          >
-            View My Work
-            <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-          </a>
-          <a
-            href="#contact"
-            className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-6 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-500 dark:border-neutral-700 dark:text-neutral-200 dark:hover:border-neutral-500"
-          >
-            Start a Project
-          </a>
-        </div>
-
-        <div className="mx-auto mt-14 grid max-w-md grid-cols-3 gap-6 border-t border-neutral-200 pt-8 dark:border-neutral-800 lg:mx-0">
-          <Stat value="150+" label="Projects Delivered" />
-          <Stat value="4.5M+" label="Views Generated" />
-          <Stat value="98%" label="Client Retention" />
-        </div>
+    <section className="relative z-10 mx-auto max-w-3xl px-6 pb-24 pt-16 text-center sm:px-10 sm:pb-32 sm:pt-24">
+      {/* Availability badge */}
+      <div className="mx-auto mb-10 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-medium text-neutral-500 backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+        Currently booking Q3 projects
       </div>
 
-      {/* Right: photo card */}
-      <div className="flex justify-center lg:justify-end">
-        <div className="relative w-64 sm:w-80">
-          <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-br from-indigo-500/25 to-fuchsia-600/20 blur-3xl" />
-          <div className="relative aspect-[4/5] overflow-hidden rounded-[1.75rem] border border-neutral-200 bg-gradient-to-b from-neutral-100 to-white dark:border-neutral-800 dark:from-neutral-800 dark:to-[#0a0a0b]">
+      {/* Profile photo */}
+      <div className="mx-auto mb-8 flex justify-center">
+        <div className="relative">
+          <div className="absolute -inset-4 rounded-full bg-gradient-to-br from-indigo-500/30 via-transparent to-fuchsia-600/30 blur-2xl" />
+          <div className="relative h-28 w-28 overflow-hidden rounded-full border-2 border-neutral-200 bg-neutral-100 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900 sm:h-36 sm:w-36">
             {imageUrl && !imgFailed ? (
               <img
                 src={imageUrl}
@@ -268,17 +221,61 @@ function Hero({ profileData, profileLoading }) {
                 className="h-full w-full object-cover"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-5xl font-bold text-neutral-300 dark:text-neutral-700">
+              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500/20 to-neutral-200 text-2xl font-bold text-indigo-500 dark:to-neutral-900 dark:text-violet-400 sm:text-3xl">
                 {initials}
               </div>
             )}
           </div>
-
-          <div className="absolute -bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-neutral-200 bg-white px-4 py-2.5 text-xs font-medium text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-            <Clapperboard className="h-3.5 w-3.5 text-indigo-500" />
-            Video Editor
-          </div>
         </div>
+      </div>
+
+      {profileLoading ? (
+        <div className="mx-auto space-y-4">
+          <div className="mx-auto h-4 w-40 animate-pulse rounded bg-neutral-100 dark:bg-neutral-900" />
+          <div className="mx-auto h-14 w-full max-w-lg animate-pulse rounded-lg bg-neutral-100 dark:bg-neutral-900 sm:h-16" />
+          <div className="mx-auto h-4 w-full max-w-md animate-pulse rounded bg-neutral-100 dark:bg-neutral-900" />
+        </div>
+      ) : (
+        <>
+          {name && (
+            <h1 className="text-2xl font-bold tracking-tight text-violet-600 dark:text-violet-300 sm:text-4xl">
+              {name}
+            </h1>
+          )}
+
+          <p className="mx-auto mt-3 max-w-2xl text-3xl font-bold leading-tight tracking-tight text-neutral-900 dark:text-white sm:text-5xl md:text-6xl">
+            Crafting stories that{' '}
+            <span className="bg-gradient-to-r from-indigo-400 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
+              move people.
+            </span>
+          </p>
+
+          <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-lg">
+            {bio}
+          </p>
+        </>
+      )}
+
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <a
+          href="#work"
+          className="group inline-flex items-center gap-2 rounded-full bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 dark:bg-white dark:text-black dark:hover:bg-indigo-500 dark:hover:text-white"
+        >
+          View My Work
+          <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+        </a>
+        <a
+          href="#contact"
+          className="inline-flex items-center gap-2 rounded-full border border-neutral-300 px-6 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-500 dark:border-neutral-700 dark:text-neutral-200 dark:hover:border-neutral-500"
+        >
+          Start a Project
+        </a>
+      </div>
+
+      <div className="mx-auto mt-16 grid max-w-md grid-cols-3 gap-6 border-t border-neutral-200 pt-8 dark:border-neutral-800">
+        <Stat value={projectsDelivered} label="Projects Delivered" />
+        <Stat value={viewsGenerated} label="Views Generated" />
+        <Stat value={clientRetention} label="Client Retention" />
       </div>
     </section>
   );

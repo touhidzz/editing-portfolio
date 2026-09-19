@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { Trash2, Loader2, Plus, Film, Lock, LogOut, ClipboardList, LayoutGrid } from 'lucide-react';
+import {
+  Trash2,
+  Loader2,
+  Plus,
+  Film,
+  Lock,
+  LogOut,
+  ClipboardList,
+  LayoutGrid,
+  Settings,
+} from 'lucide-react';
 
 const CATEGORIES = ['YouTube', 'Cinematic', 'Shorts/Reels', 'Documentary', 'Motion Graphics'];
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'In Review', 'Delivered', 'Cancelled'];
@@ -131,8 +141,8 @@ export default function AdminDashboard() {
       <header className="border-b border-neutral-800/80 bg-[#0b0f19]/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 sm:px-10">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-600 font-black text-sm">
-              E
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-fuchsia-600 font-black text-sm">
+              P
             </div>
             <div>
               <h1 className="text-lg font-semibold tracking-tight text-white">
@@ -167,11 +177,19 @@ export default function AdminDashboard() {
             icon={ClipboardList}
             label="Project Tracker"
           />
+          <TabButton
+            active={activeTab === 'settings'}
+            onClick={() => setActiveTab('settings')}
+            icon={Settings}
+            label="Site Settings"
+          />
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-10 sm:px-10">
-        {activeTab === 'portfolio' ? <PortfolioManager /> : <ProjectTracker />}
+        {activeTab === 'portfolio' && <PortfolioManager />}
+        {activeTab === 'tracker' && <ProjectTracker />}
+        {activeTab === 'settings' && <SiteSettings />}
       </main>
     </div>
   );
@@ -194,7 +212,7 @@ function TabButton({ active, onClick, icon: Icon, label }) {
 }
 
 /* ============================================================
-   TAB 1: Portfolio Projects (public-facing, same as before)
+   TAB 1: Portfolio Projects (public-facing)
    ============================================================ */
 
 function PortfolioManager() {
@@ -289,7 +307,6 @@ function PortfolioManager() {
 
   return (
     <>
-      {/* Add Project Form */}
       <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6 sm:p-8">
         <div className="mb-6 flex items-center gap-2">
           <Plus className="h-4 w-4 text-indigo-500" />
@@ -392,7 +409,6 @@ function PortfolioManager() {
         </form>
       </section>
 
-      {/* Project List */}
       <section className="mt-10">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-white sm:text-lg">
@@ -478,7 +494,7 @@ function PortfolioManager() {
 }
 
 /* ============================================================
-   TAB 2: Project Tracker (private, for your own workflow)
+   TAB 2: Project Tracker (private)
    ============================================================ */
 
 function ProjectTracker() {
@@ -491,7 +507,6 @@ function ProjectTracker() {
   const [formError, setFormError] = useState(null);
 
   const [deletingId, setDeletingId] = useState(null);
-  const [savingId, setSavingId] = useState(null);
 
   async function fetchItems() {
     setLoadingList(true);
@@ -551,11 +566,7 @@ function ProjectTracker() {
     fetchItems();
   }
 
-  // Generic inline field updater — used by dropdowns and text fields
   async function updateField(id, field, value) {
-    setSavingId(id);
-
-    // Optimistically update the UI first
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
     );
@@ -567,9 +578,8 @@ function ProjectTracker() {
 
     if (error) {
       alert(`Failed to update: ${error.message}`);
-      fetchItems(); // revert to real data on failure
+      fetchItems();
     }
-    setSavingId(null);
   }
 
   async function handleDelete(id) {
@@ -591,7 +601,6 @@ function ProjectTracker() {
 
   return (
     <>
-      {/* Add tracker entry form */}
       <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6 sm:p-8">
         <div className="mb-6 flex items-center gap-2">
           <Plus className="h-4 w-4 text-indigo-500" />
@@ -672,7 +681,6 @@ function ProjectTracker() {
         </form>
       </section>
 
-      {/* Tracker table */}
       <section className="mt-10">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-white sm:text-lg">
@@ -830,6 +838,217 @@ function StatusSelect({ value, options, onChange, variant = 'status' }) {
         </option>
       ))}
     </select>
+  );
+}
+
+/* ============================================================
+   TAB 3: Site Settings (profile + homepage stats)
+   ============================================================ */
+
+function SiteSettings() {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [rowId, setRowId] = useState(null);
+
+  const [form, setForm] = useState({
+    name: '',
+    bio: '',
+    image_url: '',
+    projects_delivered: '',
+    views_generated: '',
+    client_retention: '',
+  });
+
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    async function fetchProfile() {
+      setLoading(true);
+      setLoadError(null);
+
+      const { data, error } = await supabase.from('profile').select('*').single();
+
+      if (error) {
+        setLoadError(error.message);
+      } else if (data) {
+        setRowId(data.id);
+        setForm({
+          name: data.name || '',
+          bio: data.bio || '',
+          image_url: data.image_url || '',
+          projects_delivered: data.projects_delivered || '150+',
+          views_generated: data.views_generated || '4.5M+',
+          client_retention: data.client_retention || '98%',
+        });
+      }
+      setLoading(false);
+    }
+
+    fetchProfile();
+  }, []);
+
+  function handleChange(e) {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+
+    const { error } = await supabase
+      .from('profile')
+      .update({
+        name: form.name.trim(),
+        bio: form.bio.trim(),
+        image_url: form.image_url.trim(),
+        projects_delivered: form.projects_delivered.trim(),
+        views_generated: form.views_generated.trim(),
+        client_retention: form.client_retention.trim(),
+      })
+      .eq('id', rowId);
+
+    setSaving(false);
+
+    if (error) {
+      setSaveError(error.message);
+      return;
+    }
+
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-14 animate-pulse rounded-xl bg-neutral-900/60" />
+        ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <p className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        Couldn't load site settings: {loadError}
+      </p>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6 sm:p-8">
+      <div className="mb-6 flex items-center gap-2">
+        <Settings className="h-4 w-4 text-indigo-500" />
+        <h2 className="text-base font-semibold text-white sm:text-lg">
+          Homepage Content
+        </h2>
+      </div>
+
+      <form onSubmit={handleSave} className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Field label="Name">
+          <input
+            type="text"
+            name="name"
+            value={form.name}
+            onChange={handleChange}
+            className="input-base"
+          />
+        </Field>
+
+        <Field label="Photo URL">
+          <input
+            type="url"
+            name="image_url"
+            value={form.image_url}
+            onChange={handleChange}
+            className="input-base"
+          />
+        </Field>
+
+        <Field label="Bio" className="sm:col-span-2">
+          <textarea
+            name="bio"
+            value={form.bio}
+            onChange={handleChange}
+            rows={3}
+            className="input-base resize-none"
+          />
+        </Field>
+
+        <div className="sm:col-span-2 mt-2 border-t border-neutral-800 pt-5">
+          <p className="mb-4 text-xs font-medium uppercase tracking-wide text-neutral-400">
+            Homepage Stats
+          </p>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <Field label="Projects Delivered">
+              <input
+                type="text"
+                name="projects_delivered"
+                value={form.projects_delivered}
+                onChange={handleChange}
+                placeholder="150+"
+                className="input-base"
+              />
+            </Field>
+            <Field label="Views Generated">
+              <input
+                type="text"
+                name="views_generated"
+                value={form.views_generated}
+                onChange={handleChange}
+                placeholder="4.5M+"
+                className="input-base"
+              />
+            </Field>
+            <Field label="Client Retention">
+              <input
+                type="text"
+                name="client_retention"
+                value={form.client_retention}
+                onChange={handleChange}
+                placeholder="98%"
+                className="input-base"
+              />
+            </Field>
+          </div>
+        </div>
+
+        {saveError && (
+          <p className="sm:col-span-2 rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-400">
+            {saveError}
+          </p>
+        )}
+
+        {saveSuccess && (
+          <p className="sm:col-span-2 rounded-lg border border-green-900/50 bg-green-950/40 px-4 py-2 text-sm text-green-400">
+            Saved successfully.
+          </p>
+        )}
+
+        <div className="sm:col-span-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Changes'
+            )}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
