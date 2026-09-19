@@ -89,6 +89,17 @@ export default function App() {
     fetchProfile();
   }, []);
 
+  // Log a page view for the admin analytics tab (fire-and-forget, never blocks the page)
+  useEffect(() => {
+    async function logVisit() {
+      try {
+        await supabase.from('page_views').insert([{ path: window.location.pathname || '/' }]);
+      } catch (err) {
+        console.error('Failed to log page view:', err);
+      }
+    }
+    logVisit();
+
   const filteredProjects =
     activeFilter === 'All'
       ? projects

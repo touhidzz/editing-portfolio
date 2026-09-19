@@ -10,6 +10,7 @@ import {
   ClipboardList,
   LayoutGrid,
   Settings,
+  BarChart3,
 } from 'lucide-react';
 
 const CATEGORIES = ['YouTube', 'Cinematic', 'Shorts/Reels', 'Documentary', 'Motion Graphics'];
@@ -183,6 +184,12 @@ export default function AdminDashboard() {
             icon={Settings}
             label="Site Settings"
           />
+          <TabButton
+            active={activeTab === 'analytics'}
+            onClick={() => setActiveTab('analytics')}
+            icon={BarChart3}
+            label="Analytics"
+          />
         </div>
       </header>
 
@@ -190,6 +197,7 @@ export default function AdminDashboard() {
         {activeTab === 'portfolio' && <PortfolioManager />}
         {activeTab === 'tracker' && <ProjectTracker />}
         {activeTab === 'settings' && <SiteSettings />}
+        {activeTab === 'analytics' && <SiteAnalytics />}
       </main>
     </div>
   );
@@ -1049,6 +1057,118 @@ function SiteSettings() {
         </div>
       </form>
     </section>
+  );
+}
+
+/* ============================================================
+   TAB 4: Analytics (simple visit tracker)
+   ============================================================ */
+
+function SiteAnalytics() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [views, setViews] = useState([]);
+
+  useEffect(() => {
+    async function fetchViews() {
+      setLoading(true);
+      setError(null);
+
+      const { data, error } = await supabase
+        .from('page_views')
+        .select('viewed_at')
+        .order('viewed_at', { ascending: false })
+        .limit(5000);
+
+      if (error) {
+        setError(error.message);
+      } else {
+        setViews(data || []);
+      }
+      setLoading(false);
+    }
+
+    fetchViews();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-20 animate-pulse rounded-xl bg-neutral-900/60" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        Couldn't load analytics: {error}
+      </p>
+    );
+  }
+
+  const total = views.length;
+
+  const todayKey = new Date().toDateString();
+  const todayCount = views.filter((v) => new Date(v.viewed_at).toDateString() === todayKey).length;
+
+  // Build the last 7 days (oldest to newest), each with its visit count
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toDateString();
+    const count = views.filter((v) => new Date(v.viewed_at).toDateString() === key).length;
+    const label = d.toLocaleDateString(undefined, { weekday: 'short' });
+    days.push({ key, label, count });
+  }
+  const maxCount = Math.max(1, ...days.map((d) => d.count));
+
+  return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <StatCard label="Total Visits" value={total} />
+        <StatCard label="Today" value={todayCount} />
+      </div>
+
+      <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6 sm:p-8">
+        <h2 className="mb-6 text-base font-semibold text-white sm:text-lg">
+          Last 7 Days
+        </h2>
+
+        <div className="flex items-end justify-between gap-3" style={{ height: 160 }}>
+          {days.map((d) => (
+            <div key={d.key} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex w-full flex-1 items-end justify-center">
+                <div
+                  className="w-full max-w-[36px] rounded-t-md bg-indigo-500 transition-all"
+                  style={{ height: `${(d.count / maxCount) * 100}%`, minHeight: d.count > 0 ? 4 : 0 }}
+                  title={`${d.count} visits`}
+                />
+              </div>
+              <span className="text-[11px] text-neutral-500">{d.label}</span>
+              <span className="text-xs font-medium text-neutral-300">{d.count}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <p className="text-xs text-neutral-600">
+        Counts every load of your public homepage. Doesn't track individual visitors or personal
+        data — just timestamps.
+      </p>
+    </div>
+  );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6">
+      <div className="text-3xl font-bold text-white">{value}</div>
+      <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+    </div>
   );
 }
 
