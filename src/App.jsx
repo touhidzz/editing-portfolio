@@ -64,7 +64,7 @@ export default function App() {
       setProfileLoading(true);
       const { data, error } = await supabase
         .from('profile')
-        .select('name, bio, image_url, projects_delivered, views_generated, client_retention')
+        .select('name, bio, image_url, projects_delivered, views_generated, client_retention, availability_text')
         .single();
 
       if (error) {
@@ -183,8 +183,61 @@ function Nav({ theme, setTheme }) {
 
 /* ---------------------------------- Hero ---------------------------------- */
 
+function useTypewriter(segments, speed = 32, startDelay = 350) {
+  const fullLength = segments.reduce((sum, s) => sum + s.text.length, 0);
+  const [count, setCount] = useState(0);
+  const [started, setStarted] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setStarted(true), startDelay);
+    return () => clearTimeout(t);
+  }, [startDelay]);
+
+  useEffect(() => {
+    if (!started || count >= fullLength) return;
+    const t = setTimeout(() => setCount((c) => c + 1), speed);
+    return () => clearTimeout(t);
+  }, [started, count, fullLength, speed]);
+
+  let remaining = count;
+  const rendered = segments.map((seg) => {
+    const take = Math.max(0, Math.min(seg.text.length, remaining));
+    remaining -= take;
+    return { ...seg, shown: seg.text.slice(0, take) };
+  });
+
+  return { rendered, done: count >= fullLength };
+}
+
+function useCountUp(target, trigger, duration = 1300) {
+  const [value, setValue] = useState(0);
+  const match = String(target).match(/^([\d,.]+)(.*)$/);
+  const numericPart = match ? parseFloat(match[1].replace(/,/g, '')) : 0;
+  const suffix = match ? match[2] : '';
+  const decimals = match && match[1].includes('.') ? match[1].split('.')[1].length : 0;
+
+  useEffect(() => {
+    if (!trigger) return;
+    let start;
+    let raf;
+    function step(ts) {
+      if (!start) start = ts;
+      const progress = Math.min((ts - start) / duration, 1);
+      setValue(numericPart * progress);
+      if (progress < 1) raf = requestAnimationFrame(step);
+    }
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [trigger, numericPart, duration]);
+
+  const display = decimals > 0 ? value.toFixed(decimals) : Math.round(value).toString();
+  return `${display}${suffix}`;
+}
+
 function Hero({ profileData, profileLoading }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const [photoVisible, setPhotoVisible] = useState(false);
+  const [badgeVisible, setBadgeVisible] = useState(false);
 
   const name = profileData?.name || '';
   const bio = profileData?.bio || DEFAULT_BIO;
@@ -192,6 +245,7 @@ function Hero({ profileData, profileLoading }) {
   const projectsDelivered = profileData?.projects_delivered || '150+';
   const viewsGenerated = profileData?.views_generated || '4.5M+';
   const clientRetention = profileData?.client_retention || '98%';
+  const availabilityText = profileData?.availability_text || 'Currently booking Q3 projects';
 
   const initials = name
     ? name
@@ -203,17 +257,45 @@ function Hero({ profileData, profileLoading }) {
         .toUpperCase()
     : 'PN';
 
+  useEffect(() => {
+    if (profileLoading) return;
+    const t1 = setTimeout(() => setBadgeVisible(true), 50);
+    const t2 = setTimeout(() => setPhotoVisible(true), 200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [profileLoading]);
+
+  const headlineSegments = [
+    { text: 'Crafting stories that ', className: '' },
+    {
+      text: 'move people.',
+      className:
+        'block bg-gradient-to-r from-indigo-400 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent',
+    },
+  ];
+  const { rendered, done: headlineDone } = useTypewriter(headlineSegments, 32, 400);
+
   return (
     <section className="relative z-10 mx-auto max-w-3xl px-6 pb-24 pt-16 text-center sm:px-10 sm:pb-32 sm:pt-24">
       {/* Availability badge */}
-      <div className="mx-auto mb-10 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-medium text-neutral-500 backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400">
+      <div
+        className={`mx-auto mb-10 inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-50 px-4 py-1.5 text-xs font-medium text-neutral-500 backdrop-blur transition-all duration-700 dark:border-neutral-800 dark:bg-neutral-900/60 dark:text-neutral-400 ${
+          badgeVisible ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'
+        }`}
+      >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-        Currently booking Q3 projects
+        {availabilityText}
       </div>
 
       {/* Profile photo */}
       <div className="mx-auto mb-8 flex justify-center">
-        <div className="relative">
+        <div
+          className={`relative transition-all duration-700 ${
+            photoVisible ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
+          }`}
+        >
           <div className="absolute -inset-4 rounded-full bg-gradient-to-br from-indigo-500/30 via-transparent to-fuchsia-600/30 blur-2xl" />
           <div className="relative h-28 w-28 overflow-hidden rounded-full border-2 border-neutral-200 bg-neutral-100 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900 sm:h-36 sm:w-36">
             {imageUrl && !imgFailed ? (
@@ -247,10 +329,14 @@ function Hero({ profileData, profileLoading }) {
           )}
 
           <p className="mx-auto mt-3 max-w-2xl text-3xl font-bold leading-tight tracking-tight text-neutral-900 dark:text-white sm:text-5xl md:text-6xl">
-            Crafting stories that{' '}
-            <span className="bg-gradient-to-r from-indigo-400 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
-              move people.
-            </span>
+            {rendered.map((seg, i) => (
+              <span key={i} className={seg.className}>
+                {seg.shown}
+              </span>
+            ))}
+            {!headlineDone && (
+              <span className="ml-1 inline-block h-[0.9em] w-[3px] animate-pulse bg-current align-middle" />
+            )}
           </p>
 
           <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-lg">
@@ -276,19 +362,20 @@ function Hero({ profileData, profileLoading }) {
       </div>
 
       <div className="mx-auto mt-16 grid max-w-md grid-cols-3 gap-6 border-t border-neutral-200 pt-8 dark:border-neutral-800">
-        <Stat value={projectsDelivered} label="Projects Delivered" />
-        <Stat value={viewsGenerated} label="Views Generated" />
-        <Stat value={clientRetention} label="Client Retention" />
+        <Stat value={projectsDelivered} label="Projects Delivered" trigger={!profileLoading} />
+        <Stat value={viewsGenerated} label="Views Generated" trigger={!profileLoading} />
+        <Stat value={clientRetention} label="Client Retention" trigger={!profileLoading} />
       </div>
     </section>
   );
 }
 
-function Stat({ value, label }) {
+function Stat({ value, label, trigger }) {
+  const animatedValue = useCountUp(value, trigger);
   return (
     <div>
       <div className="text-xl font-bold text-neutral-900 dark:text-white sm:text-2xl">
-        {value}
+        {animatedValue}
       </div>
       <div className="mt-1 text-[11px] uppercase tracking-wide text-neutral-400 dark:text-neutral-500 sm:text-xs">
         {label}

@@ -872,6 +872,7 @@ function SiteSettings() {
     name: '',
     bio: '',
     image_url: '',
+    availability_text: '',
     projects_delivered: '',
     views_generated: '',
     client_retention: '',
@@ -896,6 +897,7 @@ function SiteSettings() {
           name: data.name || '',
           bio: data.bio || '',
           image_url: data.image_url || '',
+          availability_text: data.availability_text || 'Currently booking Q3 projects',
           projects_delivered: data.projects_delivered || '150+',
           views_generated: data.views_generated || '4.5M+',
           client_retention: data.client_retention || '98%',
@@ -924,6 +926,7 @@ function SiteSettings() {
         name: form.name.trim(),
         bio: form.bio.trim(),
         image_url: form.image_url.trim(),
+        availability_text: form.availability_text.trim(),
         projects_delivered: form.projects_delivered.trim(),
         views_generated: form.views_generated.trim(),
         client_retention: form.client_retention.trim(),
@@ -996,6 +999,17 @@ function SiteSettings() {
             onChange={handleChange}
             rows={3}
             className="input-base resize-none"
+          />
+        </Field>
+
+        <Field label="Availability Badge Text" className="sm:col-span-2">
+          <input
+            type="text"
+            name="availability_text"
+            value={form.availability_text}
+            onChange={handleChange}
+            placeholder="Currently booking Q3 projects"
+            className="input-base"
           />
         </Field>
 
