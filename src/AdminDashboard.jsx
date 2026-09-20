@@ -13,7 +13,6 @@ import {
   BarChart3,
 } from 'lucide-react';
 
-const CATEGORIES = ['YouTube', 'Cinematic', 'Shorts/Reels', 'Documentary', 'Motion Graphics'];
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'In Review', 'Delivered', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Unpaid', 'Partial', 'Paid'];
 
@@ -22,7 +21,7 @@ const EMPTY_FORM = {
   description: '',
   video_url: '',
   thumbnail_url: '',
-  category: CATEGORIES[0],
+  category: '',
 };
 
 const EMPTY_TRACKER_FORM = {
@@ -255,6 +254,10 @@ function PortfolioManager() {
     fetchProjects();
   }, []);
 
+  const existingCategories = Array.from(
+    new Set(projects.map((p) => p.category).filter(Boolean))
+  ).sort();
+
   function handleChange(e) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -270,13 +273,18 @@ function PortfolioManager() {
       return;
     }
 
+    if (!form.category.trim()) {
+      setFormError('Category is required.');
+      return;
+    }
+
     setSubmitting(true);
 
     const { error } = await supabase.from('projects').insert([
       {
         title: form.title.trim(),
         description: form.description.trim(),
-        category: form.category,
+        category: form.category.trim(),
         video_url: form.video_url.trim(),
         thumbnail_url: form.thumbnail_url.trim(),
       },
@@ -336,18 +344,20 @@ function PortfolioManager() {
           </Field>
 
           <Field label="Category">
-            <select
+            <input
+              type="text"
               name="category"
+              list="category-suggestions"
               value={form.category}
               onChange={handleChange}
-              className="input-base appearance-none"
-            >
-              {CATEGORIES.map((cat) => (
-                <option key={cat} value={cat} className="bg-neutral-900">
-                  {cat}
-                </option>
+              placeholder="e.g. Talking Head, YouTube, Documentary..."
+              className="input-base"
+            />
+            <datalist id="category-suggestions">
+              {existingCategories.map((cat) => (
+                <option key={cat} value={cat} />
               ))}
-            </select>
+            </datalist>
           </Field>
 
           <Field label="Video URL" className="sm:col-span-2">

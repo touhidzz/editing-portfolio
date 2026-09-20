@@ -6,21 +6,11 @@ import {
   Film,
   Clapperboard,
   Sparkles,
-  Smartphone,
   Mail,
   MessageCircle,
   Sun,
   Moon,
 } from 'lucide-react';
-
-const FILTERS = [
-  { label: 'All', value: 'All', icon: Sparkles },
-  { label: 'YouTube', value: 'YouTube', icon: Film },
-  { label: 'Cinematic', value: 'Cinematic', icon: Clapperboard },
-  { label: 'Shorts/Reels', value: 'Shorts/Reels', icon: Smartphone },
-  { label: 'Documentary', value: 'Documentary', icon: Play },
-  { label: 'Motion Graphics', value: 'Motion Graphics', icon: Clapperboard },
-];
 
 const WHATSAPP_URL = 'https://wa.me/8801591190612';
 const DEFAULT_BIO =
@@ -120,6 +110,7 @@ export default function App() {
       <WorkSection
         activeFilter={activeFilter}
         setActiveFilter={setActiveFilter}
+        allProjects={projects}
         projects={filteredProjects}
         loading={loading}
         error={error}
@@ -308,7 +299,11 @@ function Stat({ value, label }) {
 
 /* -------------------------------- WorkSection -------------------------------- */
 
-function WorkSection({ activeFilter, setActiveFilter, projects, loading, error }) {
+function WorkSection({ activeFilter, setActiveFilter, allProjects, projects, loading, error }) {
+  const categories = Array.from(
+    new Set(allProjects.map((p) => p.category).filter(Boolean))
+  ).sort();
+
   return (
     <section id="work" className="relative z-10 border-t border-neutral-200 dark:border-neutral-900">
       <div className="mx-auto max-w-6xl px-6 py-20 sm:px-10 sm:py-28">
@@ -322,7 +317,11 @@ function WorkSection({ activeFilter, setActiveFilter, projects, loading, error }
             </h2>
           </div>
 
-          <FilterBar activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
+          <FilterBar
+            activeFilter={activeFilter}
+            setActiveFilter={setActiveFilter}
+            categories={categories}
+          />
         </div>
 
         <ProjectGrid projects={projects} loading={loading} error={error} />
@@ -333,10 +332,15 @@ function WorkSection({ activeFilter, setActiveFilter, projects, loading, error }
 
 /* -------------------------------- FilterBar -------------------------------- */
 
-function FilterBar({ activeFilter, setActiveFilter }) {
+function FilterBar({ activeFilter, setActiveFilter, categories }) {
+  const options = [
+    { label: 'All', value: 'All', icon: Sparkles },
+    ...categories.map((cat) => ({ label: cat, value: cat, icon: Film })),
+  ];
+
   return (
     <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
-      {FILTERS.map(({ label, value, icon: Icon }) => {
+      {options.map(({ label, value, icon: Icon }) => {
         const isActive = activeFilter === value;
         return (
           <button
