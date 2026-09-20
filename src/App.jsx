@@ -99,6 +99,7 @@ export default function App() {
       }
     }
     logVisit();
+  }, []);
 
   const filteredProjects =
     activeFilter === 'All'
