@@ -10,7 +10,36 @@ import {
   MessageCircle,
   Sun,
   Moon,
+  X,
 } from 'lucide-react';
+
+// Turns a YouTube watch/share link into an embeddable one.
+// Returns null if the URL isn't a recognizable YouTube link (caller falls back to a direct <video> tag).
+function getYouTubeEmbedUrl(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    let videoId = null;
+
+    if (u.hostname.includes('youtu.be')) {
+      videoId = u.pathname.slice(1);
+    } else if (u.hostname.includes('youtube.com')) {
+      if (u.pathname === '/watch') {
+        videoId = u.searchParams.get('v');
+      } else if (u.pathname.startsWith('/embed/')) {
+        videoId = u.pathname.split('/embed/')[1];
+      } else if (u.pathname.startsWith('/shorts/')) {
+        videoId = u.pathname.split('/shorts/')[1];
+      }
+    }
+
+    if (!videoId) return null;
+    videoId = videoId.split('?')[0].split('&')[0];
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+  } catch {
+    return null;
+  }
+}
 
 const WHATSAPP_URL = 'https://wa.me/8801591190612';
 const DEFAULT_BIO =
@@ -387,6 +416,8 @@ function Stat({ value, label, trigger }) {
 /* -------------------------------- WorkSection -------------------------------- */
 
 function WorkSection({ activeFilter, setActiveFilter, allProjects, projects, loading, error }) {
+  const [selectedProject, setSelectedProject] = useState(null);
+
   const categories = Array.from(
     new Set(allProjects.map((p) => p.category).filter(Boolean))
   ).sort();
@@ -411,9 +442,79 @@ function WorkSection({ activeFilter, setActiveFilter, allProjects, projects, loa
           />
         </div>
 
-        <ProjectGrid projects={projects} loading={loading} error={error} />
+        <ProjectGrid projects={projects} loading={loading} error={error} onSelect={setSelectedProject} />
       </div>
+
+      <VideoModal project={selectedProject} onClose={() => setSelectedProject(null)} />
     </section>
+  );
+}
+
+/* -------------------------------- VideoModal -------------------------------- */
+
+function VideoModal({ project, onClose }) {
+  useEffect(() => {
+    if (!project) return;
+    function handleKey(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = '';
+    };
+  }, [project, onClose]);
+
+  if (!project) return null;
+
+  const embedUrl = getYouTubeEmbedUrl(project.video_url);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-3xl overflow-hidden rounded-2xl bg-black shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="aspect-video w-full">
+          {embedUrl ? (
+            <iframe
+              src={embedUrl}
+              title={project.title}
+              className="h-full w-full"
+              allow="accelerate; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          ) : project.video_url ? (
+            <video src={project.video_url} controls autoPlay className="h-full w-full">
+              Your browser doesn't support embedded video.
+            </video>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-neutral-500">
+              No video available for this project.
+            </div>
+          )}
+        </div>
+
+        <div className="p-5">
+          <h3 className="text-base font-semibold text-white sm:text-lg">{project.title}</h3>
+          {project.description && (
+            <p className="mt-1 text-sm text-neutral-400">{project.description}</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -450,7 +551,7 @@ function FilterBar({ activeFilter, setActiveFilter, categories }) {
 
 /* -------------------------------- ProjectGrid -------------------------------- */
 
-function ProjectGrid({ projects, loading, error }) {
+function ProjectGrid({ projects, loading, error, onSelect }) {
   if (loading) {
     return (
       <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
@@ -487,21 +588,20 @@ function ProjectGrid({ projects, loading, error }) {
   return (
     <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
       {projects.map((project) => (
-        <ProjectCard key={project.id} project={project} />
+        <ProjectCard key={project.id} project={project} onSelect={onSelect} />
       ))}
     </div>
   );
 }
 
-function ProjectCard({ project }) {
-  const { title, description, category, video_url, thumbnail_url } = project;
+function ProjectCard({ project, onSelect }) {
+  const { title, description, category, thumbnail_url } = project;
 
   return (
-    <a
-      href={video_url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-1.5 hover:border-neutral-300 hover:shadow-2xl hover:shadow-indigo-500/10 dark:border-neutral-800 dark:bg-neutral-900/40 dark:hover:border-neutral-700"
+    <button
+      type="button"
+      onClick={() => onSelect(project)}
+      className="group relative flex flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white text-left transition-all duration-300 hover:-translate-y-1.5 hover:border-neutral-300 hover:shadow-2xl hover:shadow-indigo-500/10 dark:border-neutral-800 dark:bg-neutral-900/40 dark:hover:border-neutral-700"
     >
       <div className="relative aspect-video overflow-hidden bg-neutral-100 dark:bg-neutral-800">
         {thumbnail_url ? (
@@ -546,10 +646,10 @@ function ProjectCard({ project }) {
 
         <div className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-neutral-600 transition-colors group-hover:text-indigo-500 dark:text-neutral-300 dark:group-hover:text-violet-400">
           Watch Full Edit
-          <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          <Play className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
         </div>
       </div>
-    </a>
+    </button>
   );
 }
 
