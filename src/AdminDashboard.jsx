@@ -11,6 +11,9 @@ import {
   LayoutGrid,
   Settings,
   BarChart3,
+  Upload,
+  Briefcase,
+  Star,
 } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'In Review', 'Delivered', 'Cancelled'];
@@ -231,8 +234,46 @@ function PortfolioManager() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formSuccess, setFormSuccess] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
 
   const [deletingId, setDeletingId] = useState(null);
+
+  async function handleThumbnailUpload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // lets you pick the same file again later
+    if (!file) return;
+
+    setUploadError(null);
+
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please choose an image file (JPG, PNG, WebP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('Image is too large. Please keep it under 5 MB.');
+      return;
+    }
+
+    setUploading(true);
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const path = `${Date.now()}-${safeName}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from('thumbnails')
+      .upload(path, file, { cacheControl: '3600', upsert: false });
+
+    if (uploadErr) {
+      setUploadError(uploadErr.message);
+      setUploading(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from('thumbnails').getPublicUrl(path);
+    setForm((prev) => ({ ...prev, thumbnail_url: data.publicUrl }));
+    setUploading(false);
+  }
 
   async function fetchProjects() {
     setLoadingList(true);
@@ -371,15 +412,53 @@ function PortfolioManager() {
             />
           </Field>
 
-          <Field label="Thumbnail URL" className="sm:col-span-2">
-            <input
-              type="url"
-              name="thumbnail_url"
-              value={form.thumbnail_url}
-              onChange={handleChange}
-              placeholder="https://.../thumbnail.jpg"
-              className="input-base"
-            />
+          <Field label="Thumbnail" className="sm:col-span-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label
+                className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full border border-neutral-700 px-4 py-2.5 text-sm font-medium text-neutral-200 transition hover:border-indigo-500 hover:text-white ${
+                  uploading ? 'pointer-events-none opacity-60' : ''
+                }`}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    Upload image
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleThumbnailUpload}
+                  className="hidden"
+                />
+              </label>
+
+              <input
+                type="url"
+                name="thumbnail_url"
+                value={form.thumbnail_url}
+                onChange={handleChange}
+                placeholder="...or paste an image link"
+                className="input-base"
+              />
+            </div>
+
+            {uploadError && (
+              <p className="mt-2 text-xs text-red-400">{uploadError}</p>
+            )}
+
+            {form.thumbnail_url && (
+              <img
+                src={form.thumbnail_url}
+                alt="Thumbnail preview"
+                className="mt-3 h-24 w-auto rounded-lg border border-neutral-800 object-cover"
+              />
+            )}
           </Field>
 
           <Field label="Description" className="sm:col-span-2">
