@@ -1,44 +1,58 @@
-// import React from 'react'
-// import ReactDOM from 'react-dom/client'
-// import AdminDashboard from './AdminDashboard.jsx'
-// import './index.css'
-
-// ReactDOM.createRoot(document.getElementById('root')).render(
-//   <React.StrictMode>
-//     <AdminDashboard />
-//   </React.StrictMode>,
-// )
-
-
-// import React from 'react'
-// import ReactDOM from 'react-dom/client'
-// import App from './App.jsx'
-// import './index.css'
-
-// ReactDOM.createRoot(document.getElementById('root')).render(
-//   <React.StrictMode>
-//     <App />
-//   </React.StrictMode>,
-// )
-
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import AdminDashboard from './AdminDashboard.jsx'
+import InvoicePage from './InvoicePage.jsx'
 import './index.css'
 
-// Check if your browser URL ends with '#manage-content'
-const isSecretAdminRoute = window.location.hash === '#manage-content';
+// Which page to show, based on the end of the web address:
+//   (nothing / #work / #contact ...)  -> your portfolio
+//   #manage-content                   -> your admin panel
+//   #invoice=<secret-code>            -> a client's invoice page
+function getRoute() {
+  const hash = window.location.hash
+
+  if (hash === '#manage-content') {
+    return { name: 'admin', token: '' }
+  }
+
+  if (hash.startsWith('#invoice=')) {
+    return { name: 'invoice', token: hash.slice('#invoice='.length) }
+  }
+
+  return { name: 'home', token: '' }
+}
+
+function Root() {
+  const [route, setRoute] = useState(getRoute)
+
+  useEffect(() => {
+    function handleHashChange() {
+      const next = getRoute()
+      // Keep the same object when nothing changed, so clicking menu links
+      // like #work does not re-render anything unnecessarily.
+      setRoute((prev) =>
+        prev.name === next.name && prev.token === next.token ? prev : next
+      )
+    }
+
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
+  if (route.name === 'admin') return <AdminDashboard />
+  if (route.name === 'invoice') return <InvoicePage token={route.token} />
+  return <App />
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {isSecretAdminRoute ? <AdminDashboard /> : <App />}
+    <Root />
   </React.StrictMode>,
 )
 
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js');
-  });
+    navigator.serviceWorker.register('/sw.js')
+  })
 }
