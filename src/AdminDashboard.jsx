@@ -12,9 +12,24 @@ import {
   Settings,
   BarChart3,
   Upload,
-  Briefcase,
-  Star,
+  FileText,
+  Copy,
 } from 'lucide-react';
+
+function formatMoney(n) {
+  return '৳' + Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function invoiceLink(token) {
+  return `${window.location.origin}/#invoice=${token}`;
+}
 
 const STATUS_OPTIONS = ['Pending', 'In Progress', 'In Review', 'Delivered', 'Cancelled'];
 const PAYMENT_OPTIONS = ['Unpaid', 'Partial', 'Paid'];
@@ -167,7 +182,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Tabs */}
-        <div className="mx-auto flex max-w-6xl gap-2 px-6 pb-4 sm:px-10">
+        <div className="mx-auto flex max-w-6xl flex-wrap gap-2 px-6 pb-4 sm:px-10">
           <TabButton
             active={activeTab === 'portfolio'}
             onClick={() => setActiveTab('portfolio')}
@@ -192,6 +207,12 @@ export default function AdminDashboard() {
             icon={BarChart3}
             label="Analytics"
           />
+          <TabButton
+            active={activeTab === 'invoices'}
+            onClick={() => setActiveTab('invoices')}
+            icon={FileText}
+            label="Invoices"
+          />
         </div>
       </header>
 
@@ -200,6 +221,7 @@ export default function AdminDashboard() {
         {activeTab === 'tracker' && <ProjectTracker />}
         {activeTab === 'settings' && <SiteSettings />}
         {activeTab === 'analytics' && <SiteAnalytics />}
+        {activeTab === 'invoices' && <InvoiceManager />}
       </main>
     </div>
   );
@@ -855,6 +877,15 @@ function ProjectTracker() {
                         onChange={(value) => updateField(item.id, 'payment_status', value)}
                         variant="payment"
                       />
+                      {Number(item.paid_amount) > 0 && (
+                        <div className="mt-1.5 text-[11px] leading-tight text-neutral-500">
+                          <div>
+                            {formatMoney(item.paid_amount)} received
+                            {item.last_paid_at ? ` · ${formatDate(item.last_paid_at)}` : ''}
+                          </div>
+                          {item.last_trx_id && <div>TrxID: {item.last_trx_id}</div>}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <input
@@ -1271,6 +1302,678 @@ function StatCard({ label, value }) {
     <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6">
       <div className="text-3xl font-bold text-white">{value}</div>
       <div className="mt-1 text-xs uppercase tracking-wide text-neutral-500">{label}</div>
+    </div>
+  );
+}
+
+/* ============================================================
+   TAB: Invoices (create invoices, confirm client payments)
+   ============================================================ */
+
+const INVOICE_EMPTY = {
+  tracker_id: '',
+  client_name: '',
+  project_name: '',
+  description: '',
+  amount: '',
+  due_date: '',
+  notes: '',
+};
+
+const SETTINGS_EMPTY = {
+  bkash_number: '',
+  rocket_number: '',
+  nagad_number: '',
+  other_details: '',
+  instructions: '',
+};
+
+const INVOICE_STATUS_STYLES = {
+  Unpaid: 'border-red-900/50 bg-red-950/40 text-red-400',
+  Partial: 'border-yellow-900/50 bg-yellow-950/40 text-yellow-400',
+  Paid: 'border-green-900/50 bg-green-950/40 text-green-400',
+  Cancelled: 'border-neutral-700 bg-neutral-800/60 text-neutral-400',
+};
+
+function InvoiceManager() {
+  const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [trackerRows, setTrackerRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  const [settings, setSettings] = useState(SETTINGS_EMPTY);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsMsg, setSettingsMsg] = useState(null);
+
+  const [form, setForm] = useState(INVOICE_EMPTY);
+  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState(null);
+  const [createdInvoice, setCreatedInvoice] = useState(null);
+
+  const [busyId, setBusyId] = useState(null);
+  const [copiedKey, setCopiedKey] = useState(null);
+
+  async function loadAll(silent = false) {
+    if (!silent) setLoading(true);
+    setLoadError(null);
+
+    const [inv, pay, trk, set] = await Promise.all([
+      supabase.from('invoices').select('*').order('id', { ascending: false }),
+      supabase.from('payments').select('*').order('submitted_at', { ascending: false }),
+      supabase
+        .from('project_tracker')
+        .select('id, project_name, client_name')
+        .order('created_at', { ascending: false }),
+      supabase.from('payment_settings').select('*').eq('id', 1).maybeSingle(),
+    ]);
+
+    const err = inv.error || pay.error || trk.error || set.error;
+    if (err) {
+      setLoadError(err.message);
+      setLoading(false);
+      return;
+    }
+
+    setInvoices(inv.data || []);
+    setPayments(pay.data || []);
+    setTrackerRows(trk.data || []);
+    if (set.data) {
+      setSettings({
+        bkash_number: set.data.bkash_number || '',
+        rocket_number: set.data.rocket_number || '',
+        nagad_number: set.data.nagad_number || '',
+        other_details: set.data.other_details || '',
+        instructions: set.data.instructions || '',
+      });
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  async function copyText(text, key) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1800);
+    } catch {
+      window.prompt('Copy this link:', text);
+    }
+  }
+
+  function handleSettingsChange(e) {
+    const { name, value } = e.target;
+    setSettings((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function saveSettings(e) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsMsg(null);
+
+    const clean = (v) => (v.trim() === '' ? null : v.trim());
+
+    const { error } = await supabase.from('payment_settings').upsert(
+      [
+        {
+          id: 1,
+          bkash_number: clean(settings.bkash_number),
+          rocket_number: clean(settings.rocket_number),
+          nagad_number: clean(settings.nagad_number),
+          other_details: clean(settings.other_details),
+          instructions: clean(settings.instructions),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { onConflict: 'id' }
+    );
+
+    setSavingSettings(false);
+
+    if (error) {
+      setSettingsMsg({ type: 'error', text: error.message });
+      return;
+    }
+    setSettingsMsg({ type: 'ok', text: 'Saved.' });
+    setTimeout(() => setSettingsMsg(null), 3000);
+  }
+
+  function handleFormChange(e) {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleTrackerSelect(e) {
+    const value = e.target.value;
+    const row = trackerRows.find((r) => String(r.id) === value);
+    setForm((prev) => ({
+      ...prev,
+      tracker_id: value,
+      client_name: row && row.client_name ? row.client_name : prev.client_name,
+      project_name: row && row.project_name ? row.project_name : prev.project_name,
+    }));
+  }
+
+  async function createInvoice(e) {
+    e.preventDefault();
+    setFormError(null);
+    setCreatedInvoice(null);
+
+    const amount = Number(form.amount);
+
+    if (!form.client_name.trim()) {
+      setFormError('Client name is required.');
+      return;
+    }
+    if (!form.project_name.trim()) {
+      setFormError('Project name is required.');
+      return;
+    }
+    if (!amount || amount <= 0) {
+      setFormError('Enter an amount greater than 0.');
+      return;
+    }
+
+    setCreating(true);
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .insert([
+        {
+          tracker_id: form.tracker_id ? Number(form.tracker_id) : null,
+          client_name: form.client_name.trim(),
+          project_name: form.project_name.trim(),
+          description: form.description.trim() || null,
+          amount,
+          due_date: form.due_date || null,
+          notes: form.notes.trim() || null,
+        },
+      ])
+      .select()
+      .single();
+
+    setCreating(false);
+
+    if (error) {
+      setFormError(error.message);
+      return;
+    }
+
+    setCreatedInvoice({ token: data.token, invoice_no: data.invoice_no });
+    setForm(INVOICE_EMPTY);
+    loadAll(true);
+  }
+
+  async function confirmPayment(p) {
+    const ok = window.confirm(
+      `Confirm that you received ${formatMoney(p.amount)} via ${p.method} (TrxID ${p.trx_id})?\n\n` +
+        `Check your ${p.method} app or SMS first. This will mark the invoice and the linked project as paid.`
+    );
+    if (!ok) return;
+
+    setBusyId(`pay-${p.id}`);
+    const { error } = await supabase.rpc('confirm_payment', { p_payment_id: p.id });
+    if (error) window.alert(error.message);
+    await loadAll(true);
+    setBusyId(null);
+  }
+
+  async function rejectPayment(p) {
+    const ok = window.confirm(
+      `Reject this payment (TrxID ${p.trx_id})? Use this if you did not receive the money.`
+    );
+    if (!ok) return;
+
+    setBusyId(`pay-${p.id}`);
+    const { error } = await supabase
+      .from('payments')
+      .update({ status: 'Rejected' })
+      .eq('id', p.id)
+      .eq('status', 'Pending');
+    if (error) window.alert(error.message);
+    await loadAll(true);
+    setBusyId(null);
+  }
+
+  async function cancelInvoice(inv) {
+    const ok = window.confirm(`Cancel invoice ${inv.invoice_no}? The client will no longer be able to pay it.`);
+    if (!ok) return;
+
+    setBusyId(`inv-${inv.id}`);
+    const { error } = await supabase.from('invoices').update({ status: 'Cancelled' }).eq('id', inv.id);
+    if (error) window.alert(error.message);
+    await loadAll(true);
+    setBusyId(null);
+  }
+
+  async function deleteInvoice(inv) {
+    const ok = window.confirm(`Delete invoice ${inv.invoice_no}? This cannot be undone.`);
+    if (!ok) return;
+
+    setBusyId(`inv-${inv.id}`);
+    const { error } = await supabase.from('invoices').delete().eq('id', inv.id);
+    if (error) window.alert(error.message);
+    await loadAll(true);
+    setBusyId(null);
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-20 animate-pulse rounded-xl bg-neutral-900/60" />
+        ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <p className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        Couldn't load invoices: {loadError}
+        <br />
+        <span className="text-red-300/80">
+          If this is the first time, make sure you ran invoice-system.sql in Supabase.
+        </span>
+      </p>
+    );
+  }
+
+  const pendingPayments = payments.filter((p) => p.status === 'Pending');
+  const hasPaymentNumbers = settings.bkash_number || settings.rocket_number || settings.nagad_number;
+
+  return (
+    <div className="space-y-10">
+      {/* Waiting for your confirmation */}
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-white sm:text-lg">Waiting for your confirmation</h2>
+          <span className="text-xs text-neutral-500">{pendingPayments.length} pending</span>
+        </div>
+
+        {pendingPayments.length === 0 ? (
+          <p className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-6 text-center text-sm text-neutral-500">
+            No payments waiting. When a client submits a TrxID, it will show up here.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {pendingPayments.map((p) => {
+              const inv = invoices.find((i) => i.id === p.invoice_id);
+              const busy = busyId === `pay-${p.id}`;
+              return (
+                <div
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-900/40 bg-blue-950/20 px-4 py-3"
+                >
+                  <div className="text-sm">
+                    <div className="font-medium text-white">
+                      {formatMoney(p.amount)} · {p.method}
+                      {inv ? ` — ${inv.client_name}` : ''}
+                    </div>
+                    <div className="mt-0.5 text-xs text-neutral-400">
+                      {inv ? `${inv.invoice_no} · ` : ''}
+                      TrxID <span className="font-mono text-neutral-200">{p.trx_id}</span>
+                      {p.sender_number ? ` · from ${p.sender_number}` : ''} · {formatDate(p.submitted_at)}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => confirmPayment(p)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Confirm received
+                    </button>
+                    <button
+                      onClick={() => rejectPayment(p)}
+                      disabled={busy}
+                      className="rounded-full border border-red-900/50 px-4 py-1.5 text-xs font-medium text-red-400 transition hover:border-red-500 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Create invoice */}
+      <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6 sm:p-8">
+        <div className="mb-6 flex items-center gap-2">
+          <Plus className="h-4 w-4 text-indigo-500" />
+          <h2 className="text-base font-semibold text-white sm:text-lg">Create Invoice</h2>
+        </div>
+
+        <form onSubmit={createInvoice} className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <Field label="Link to tracker project (optional)" className="sm:col-span-2">
+            <select
+              name="tracker_id"
+              value={form.tracker_id}
+              onChange={handleTrackerSelect}
+              className="input-base appearance-none"
+            >
+              <option value="" className="bg-neutral-900">
+                Not linked to a tracker project
+              </option>
+              {trackerRows.map((r) => (
+                <option key={r.id} value={r.id} className="bg-neutral-900">
+                  {r.project_name}
+                  {r.client_name ? ` — ${r.client_name}` : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Client Name">
+            <input
+              type="text"
+              name="client_name"
+              value={form.client_name}
+              onChange={handleFormChange}
+              className="input-base"
+            />
+          </Field>
+
+          <Field label="Project Name">
+            <input
+              type="text"
+              name="project_name"
+              value={form.project_name}
+              onChange={handleFormChange}
+              className="input-base"
+            />
+          </Field>
+
+          <Field label="Amount (৳)">
+            <input
+              type="number"
+              name="amount"
+              min="1"
+              step="any"
+              value={form.amount}
+              onChange={handleFormChange}
+              placeholder="5000"
+              className="input-base"
+            />
+          </Field>
+
+          <Field label="Due Date">
+            <input
+              type="date"
+              name="due_date"
+              value={form.due_date}
+              onChange={handleFormChange}
+              className="input-base [color-scheme:dark]"
+            />
+          </Field>
+
+          <Field label="Description (what the invoice is for)" className="sm:col-span-2">
+            <textarea
+              name="description"
+              value={form.description}
+              onChange={handleFormChange}
+              rows={2}
+              className="input-base resize-none"
+            />
+          </Field>
+
+          <Field label="Notes (shown to the client)" className="sm:col-span-2">
+            <input
+              type="text"
+              name="notes"
+              value={form.notes}
+              onChange={handleFormChange}
+              className="input-base"
+            />
+          </Field>
+
+          {formError && (
+            <p className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-400 sm:col-span-2">
+              {formError}
+            </p>
+          )}
+
+          {createdInvoice && (
+            <div className="rounded-lg border border-green-900/50 bg-green-950/40 px-4 py-3 text-sm text-green-300 sm:col-span-2">
+              <div className="font-medium">
+                {createdInvoice.invoice_no} created. Send this link to your client:
+              </div>
+              <div className="mt-2 break-all rounded-md bg-black/30 px-3 py-2 font-mono text-xs text-green-200">
+                {invoiceLink(createdInvoice.token)}
+              </div>
+              <button
+                type="button"
+                onClick={() => copyText(invoiceLink(createdInvoice.token), 'created')}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-green-700 px-3 py-1 text-xs font-medium text-green-200 transition hover:bg-green-900/40"
+              >
+                <Copy className="h-3 w-3" />
+                {copiedKey === 'created' ? 'Copied' : 'Copy link'}
+              </button>
+            </div>
+          )}
+
+          <div className="sm:col-span-2">
+            <button
+              type="submit"
+              disabled={creating}
+              className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {creating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Create Invoice
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* All invoices */}
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-white sm:text-lg">All Invoices</h2>
+          <span className="text-xs text-neutral-500">{invoices.length} total</span>
+        </div>
+
+        {invoices.length === 0 ? (
+          <p className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-500">
+            No invoices yet. Create your first one above.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-neutral-800">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-neutral-800 bg-neutral-900/60 text-xs uppercase tracking-wide text-neutral-500">
+                  <th className="px-4 py-3 font-medium">Invoice</th>
+                  <th className="px-4 py-3 font-medium">Client / Project</th>
+                  <th className="px-4 py-3 font-medium">Total</th>
+                  <th className="px-4 py-3 font-medium">Paid</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Due</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800">
+                {invoices.map((inv) => {
+                  const hasPending = payments.some(
+                    (p) => p.invoice_id === inv.id && p.status === 'Pending'
+                  );
+                  const busy = busyId === `inv-${inv.id}`;
+                  const untouched = Number(inv.amount_paid) === 0;
+                  return (
+                    <tr key={inv.id} className="bg-neutral-900/20 transition hover:bg-neutral-900/50">
+                      <td className="px-4 py-3 font-mono text-xs text-neutral-300">{inv.invoice_no}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{inv.client_name}</div>
+                        <div className="text-xs text-neutral-500">{inv.project_name}</div>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-200">{formatMoney(inv.amount)}</td>
+                      <td className="px-4 py-3 text-neutral-200">{formatMoney(inv.amount_paid)}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                            INVOICE_STATUS_STYLES[inv.status] || INVOICE_STATUS_STYLES.Unpaid
+                          }`}
+                        >
+                          {inv.status}
+                        </span>
+                        {hasPending && (
+                          <div className="mt-1 text-[11px] text-blue-400">Payment to verify</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-400">{formatDate(inv.due_date)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            onClick={() => copyText(invoiceLink(inv.token), `inv-${inv.id}`)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-indigo-500 hover:text-white"
+                          >
+                            <Copy className="h-3 w-3" />
+                            {copiedKey === `inv-${inv.id}` ? 'Copied' : 'Copy link'}
+                          </button>
+                          <a
+                            href={invoiceLink(inv.token)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-full border border-neutral-700 px-3 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-indigo-500 hover:text-white"
+                          >
+                            Open
+                          </a>
+                          {untouched && inv.status === 'Unpaid' && (
+                            <button
+                              onClick={() => cancelInvoice(inv)}
+                              disabled={busy}
+                              className="rounded-full border border-neutral-700 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-yellow-600 hover:text-yellow-400 disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                          {untouched && (
+                            <button
+                              onClick={() => deleteInvoice(inv)}
+                              disabled={busy}
+                              className="inline-flex items-center rounded-full border border-red-900/50 px-3 py-1.5 text-xs font-medium text-red-400 transition hover:border-red-500 hover:bg-red-950/40 disabled:opacity-50"
+                              aria-label="Delete invoice"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Payment details shown to clients */}
+      <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-6 sm:p-8">
+        <h2 className="text-base font-semibold text-white sm:text-lg">Where clients should pay</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          These numbers appear on every invoice page.
+          {!hasPaymentNumbers && (
+            <span className="text-yellow-400"> Add at least one so clients know where to send money.</span>
+          )}
+        </p>
+
+        <form onSubmit={saveSettings} className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
+          <Field label="bKash number">
+            <input
+              type="text"
+              name="bkash_number"
+              value={settings.bkash_number}
+              onChange={handleSettingsChange}
+              placeholder="01XXXXXXXXX"
+              className="input-base"
+            />
+          </Field>
+          <Field label="Rocket number">
+            <input
+              type="text"
+              name="rocket_number"
+              value={settings.rocket_number}
+              onChange={handleSettingsChange}
+              placeholder="01XXXXXXXXX"
+              className="input-base"
+            />
+          </Field>
+          <Field label="Nagad number">
+            <input
+              type="text"
+              name="nagad_number"
+              value={settings.nagad_number}
+              onChange={handleSettingsChange}
+              placeholder="01XXXXXXXXX"
+              className="input-base"
+            />
+          </Field>
+
+          <Field label="Other details (bank account, etc.)" className="sm:col-span-3">
+            <textarea
+              name="other_details"
+              value={settings.other_details}
+              onChange={handleSettingsChange}
+              rows={2}
+              className="input-base resize-none"
+            />
+          </Field>
+
+          <Field label="Instructions for clients" className="sm:col-span-3">
+            <textarea
+              name="instructions"
+              value={settings.instructions}
+              onChange={handleSettingsChange}
+              rows={2}
+              placeholder="e.g. Use Send Money, and write the invoice number as the reference."
+              className="input-base resize-none"
+            />
+          </Field>
+
+          {settingsMsg && (
+            <p
+              className={`rounded-lg border px-4 py-2 text-sm sm:col-span-3 ${
+                settingsMsg.type === 'ok'
+                  ? 'border-green-900/50 bg-green-950/40 text-green-400'
+                  : 'border-red-900/50 bg-red-950/40 text-red-400'
+              }`}
+            >
+              {settingsMsg.text}
+            </p>
+          )}
+
+          <div className="sm:col-span-3">
+            <button
+              type="submit"
+              disabled={savingSettings}
+              className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingSettings ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save payment details'
+              )}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }
