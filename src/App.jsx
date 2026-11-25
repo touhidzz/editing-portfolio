@@ -78,6 +78,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('projects')
         .select('id, title, description, category, video_url, thumbnail_url')
+        .order('sort_order', { ascending: true, nullsFirst: false })
         .order('id', { ascending: false });
 
       if (error) {

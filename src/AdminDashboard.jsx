@@ -49,6 +49,27 @@ const EMPTY_TRACKER_FORM = {
   notes: '',
 };
 
+// Kinds of custom column you can add to the Project Tracker
+const COLUMN_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'money', label: 'Money (৳)' },
+  { value: 'date', label: 'Date (calendar)' },
+  { value: 'duration', label: 'Video length (min / sec)' },
+  { value: 'dropdown', label: 'Dropdown (your own options)' },
+  { value: 'checkbox', label: 'Yes / No tick' },
+  { value: 'link', label: 'Link' },
+];
+
+// Video length is stored as total seconds. 125 -> "2m 05s"
+function formatDuration(totalSeconds) {
+  const t = Number(totalSeconds);
+  if (!t || t < 0) return '';
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  return `${m}m ${String(s).padStart(2, '0')}s`;
+}
+
 export default function AdminDashboard() {
   const [session, setSession] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -261,6 +282,11 @@ function PortfolioManager() {
 
   const [deletingId, setDeletingId] = useState(null);
 
+  // Reordering
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+  const [orderMsg, setOrderMsg] = useState(null);
+
   async function handleThumbnailUpload(e) {
     const file = e.target.files?.[0];
     e.target.value = ''; // lets you pick the same file again later
@@ -302,7 +328,8 @@ function PortfolioManager() {
     setListError(null);
     const { data, error } = await supabase
       .from('projects')
-      .select('id, title, description, category, video_url, thumbnail_url')
+      .select('id, title, description, category, video_url, thumbnail_url, sort_order')
+      .order('sort_order', { ascending: true, nullsFirst: false })
       .order('id', { ascending: false });
 
     if (error) {
@@ -350,6 +377,10 @@ function PortfolioManager() {
         category: form.category.trim(),
         video_url: form.video_url.trim(),
         thumbnail_url: form.thumbnail_url.trim(),
+        sort_order: projects.reduce(
+          (min, p) => (p.sort_order != null ? Math.min(min, p.sort_order) : min),
+          0
+        ) - 1,
       },
     ]);
 
@@ -365,6 +396,59 @@ function PortfolioManager() {
     fetchProjects();
 
     setTimeout(() => setFormSuccess(false), 3000);
+  }
+
+  async function saveOrder(newList) {
+    setOrderMsg(null);
+    // Which rows actually changed position?
+    const changed = newList
+      .map((p, i) => ({ p, i }))
+      .filter(({ p, i }) => p.sort_order !== i);
+
+    // Show the new order immediately
+    setProjects(newList.map((p, i) => ({ ...p, sort_order: i })));
+
+    const results = await Promise.all(
+      changed.map(({ p, i }) =>
+        supabase.from('projects').update({ sort_order: i }).eq('id', p.id).select('id')
+      )
+    );
+
+    const failed = results.find((r) => r.error || !r.data || r.data.length === 0);
+    if (failed) {
+      setOrderMsg({
+        type: 'error',
+        text: failed.error
+          ? `Couldn't save the new order: ${failed.error.message}`
+          : "Couldn't save the new order. Please run the SQL setup for this feature in Supabase first.",
+      });
+      fetchProjects();
+      return;
+    }
+
+    setOrderMsg({ type: 'ok', text: 'Order saved. Your website now shows the videos in this order.' });
+    setTimeout(() => setOrderMsg(null), 3000);
+  }
+
+  function moveProject(index, direction) {
+    const target = index + direction;
+    if (target < 0 || target >= projects.length) return;
+    const list = [...projects];
+    const [moved] = list.splice(index, 1);
+    list.splice(target, 0, moved);
+    saveOrder(list);
+  }
+
+  function handleDrop(targetId) {
+    const from = projects.findIndex((p) => p.id === dragId);
+    const to = projects.findIndex((p) => p.id === targetId);
+    setDragId(null);
+    setOverId(null);
+    if (from < 0 || to < 0 || from === to) return;
+    const list = [...projects];
+    const [moved] = list.splice(from, 1);
+    list.splice(to, 0, moved);
+    saveOrder(list);
   }
 
   async function handleDelete(id) {
@@ -533,8 +617,22 @@ function PortfolioManager() {
           <h2 className="text-base font-semibold text-white sm:text-lg">
             Existing Projects
           </h2>
-          <span className="text-xs text-neutral-500">{projects.length} total</span>
+          <span className="text-xs text-neutral-500">
+            {projects.length} total · drag ⋮⋮ or use ↑ ↓ to reorder
+          </span>
         </div>
+
+        {orderMsg && (
+          <p
+            className={`mb-4 rounded-lg border px-4 py-2 text-sm ${
+              orderMsg.type === 'ok'
+                ? 'border-green-900/50 bg-green-950/40 text-green-400'
+                : 'border-red-900/50 bg-red-950/40 text-red-400'
+            }`}
+          >
+            {orderMsg.text}
+          </p>
+        )}
 
         {loadingList ? (
           <div className="space-y-3">
@@ -555,6 +653,7 @@ function PortfolioManager() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-neutral-800 bg-neutral-900/60 text-xs uppercase tracking-wide text-neutral-500">
+                  <th className="px-3 py-3 font-medium">Order</th>
                   <th className="px-4 py-3 font-medium">Thumbnail</th>
                   <th className="px-4 py-3 font-medium">Title</th>
                   <th className="px-4 py-3 font-medium">Category</th>
@@ -563,8 +662,69 @@ function PortfolioManager() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800">
-                {projects.map((project) => (
-                  <tr key={project.id} className="bg-neutral-900/20 transition hover:bg-neutral-900/50">
+                {projects.map((project, index) => (
+                  <tr
+                    key={project.id}
+                    onDragOver={(e) => {
+                      if (dragId !== null) {
+                        e.preventDefault();
+                        setOverId(project.id);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleDrop(project.id);
+                    }}
+                    className={`transition hover:bg-neutral-900/50 ${
+                      dragId === project.id ? 'opacity-40' : ''
+                    } ${
+                      overId === project.id && dragId !== project.id
+                        ? 'bg-indigo-500/20'
+                        : 'bg-neutral-900/20'
+                    }`}
+                  >
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            setDragId(project.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', String(project.id));
+                            const row = e.currentTarget.closest('tr');
+                            if (row) e.dataTransfer.setDragImage(row, 20, 20);
+                          }}
+                          onDragEnd={() => {
+                            setDragId(null);
+                            setOverId(null);
+                          }}
+                          title="Drag to reorder"
+                          className="cursor-grab select-none px-1 text-xl leading-none text-neutral-500 hover:text-indigo-400 active:cursor-grabbing"
+                        >
+                          ⋮⋮
+                        </span>
+                        <div className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => moveProject(index, -1)}
+                            disabled={index === 0}
+                            className="px-1 text-xs leading-4 text-neutral-400 transition hover:text-indigo-400 disabled:opacity-20"
+                            aria-label="Move up"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveProject(index, 1)}
+                            disabled={index === projects.length - 1}
+                            className="px-1 text-xs leading-4 text-neutral-400 transition hover:text-indigo-400 disabled:opacity-20"
+                            aria-label="Move down"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       {project.thumbnail_url ? (
                         <img
@@ -627,6 +787,33 @@ function ProjectTracker() {
 
   const [deletingId, setDeletingId] = useState(null);
 
+  // Custom columns
+  const [columns, setColumns] = useState([]);
+  const [columnsError, setColumnsError] = useState(null);
+  const [showColumnForm, setShowColumnForm] = useState(false);
+  const [colForm, setColForm] = useState({ name: '', type: 'text', options: '' });
+  const [colSaving, setColSaving] = useState(false);
+  const [colFormError, setColFormError] = useState(null);
+
+  // Filters
+  const [deliveryFilter, setDeliveryFilter] = useState('all');
+  const [paymentFilter, setPaymentFilter] = useState('all');
+
+  async function fetchColumns() {
+    const { data, error } = await supabase
+      .from('tracker_columns')
+      .select('*')
+      .order('position', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (error) {
+      setColumnsError(error.message);
+    } else {
+      setColumnsError(null);
+      setColumns(data || []);
+    }
+  }
+
   async function fetchItems() {
     setLoadingList(true);
     setListError(null);
@@ -645,6 +832,7 @@ function ProjectTracker() {
 
   useEffect(() => {
     fetchItems();
+    fetchColumns();
   }, []);
 
   function handleChange(e) {
@@ -700,6 +888,110 @@ function ProjectTracker() {
       fetchItems();
     }
   }
+
+  async function handleAddColumn(e) {
+    e.preventDefault();
+    setColFormError(null);
+
+    const name = colForm.name.trim();
+    if (!name) {
+      setColFormError('Please give the column a name.');
+      return;
+    }
+
+    let options = [];
+    if (colForm.type === 'dropdown') {
+      options = colForm.options
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean);
+      if (options.length < 2) {
+        setColFormError('Add at least two options, separated by commas.');
+        return;
+      }
+    }
+
+    setColSaving(true);
+    const { error } = await supabase.from('tracker_columns').insert([
+      { name, type: colForm.type, options, position: columns.length },
+    ]);
+    setColSaving(false);
+
+    if (error) {
+      setColFormError(error.message);
+      return;
+    }
+
+    setColForm({ name: '', type: 'text', options: '' });
+    setShowColumnForm(false);
+    fetchColumns();
+  }
+
+  async function handleRenameColumn(col) {
+    const name = window.prompt('Column name:', col.name);
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    const patch = { name: trimmed };
+
+    if (col.type === 'dropdown') {
+      const opts = window.prompt(
+        'Dropdown options (separate with commas):',
+        (col.options || []).join(', ')
+      );
+      if (opts !== null) {
+        const list = opts.split(',').map((o) => o.trim()).filter(Boolean);
+        if (list.length >= 2) patch.options = list;
+      }
+    }
+
+    const { error } = await supabase.from('tracker_columns').update(patch).eq('id', col.id);
+    if (error) {
+      alert(`Failed to update column: ${error.message}`);
+      return;
+    }
+    fetchColumns();
+  }
+
+  async function handleDeleteColumn(col) {
+    const confirmed = window.confirm(
+      `Delete the "${col.name}" column? The values in it will be lost. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabase.from('tracker_columns').delete().eq('id', col.id);
+    if (error) {
+      alert(`Failed to delete column: ${error.message}`);
+      return;
+    }
+    setColumns((prev) => prev.filter((c) => c.id !== col.id));
+  }
+
+  async function updateCustom(item, colId, value) {
+    const next = { ...(item.custom_data || {}), [colId]: value };
+
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, custom_data: next } : i))
+    );
+
+    const { error } = await supabase
+      .from('project_tracker')
+      .update({ custom_data: next })
+      .eq('id', item.id);
+
+    if (error) {
+      alert(`Failed to update: ${error.message}`);
+      fetchItems();
+    }
+  }
+
+  const visibleItems = items.filter((item) => {
+    if (deliveryFilter === 'delivered' && item.status !== 'Delivered') return false;
+    if (deliveryFilter === 'not_delivered' && item.status === 'Delivered') return false;
+    if (paymentFilter !== 'all' && item.payment_status !== paymentFilter) return false;
+    return true;
+  });
 
   async function handleDelete(id) {
     const confirmed = window.confirm('Delete this tracker entry? This cannot be undone.');
@@ -805,8 +1097,129 @@ function ProjectTracker() {
           <h2 className="text-base font-semibold text-white sm:text-lg">
             All Tracked Projects
           </h2>
-          <span className="text-xs text-neutral-500">{items.length} total</span>
+          <span className="text-xs text-neutral-500">
+            Showing {visibleItems.length} of {items.length}
+          </span>
         </div>
+
+        {/* Filters + custom columns */}
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <select
+            value={deliveryFilter}
+            onChange={(e) => setDeliveryFilter(e.target.value)}
+            className="rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-medium text-neutral-200 outline-none focus:border-indigo-500"
+          >
+            <option value="all">Delivery: All</option>
+            <option value="delivered">Delivered</option>
+            <option value="not_delivered">Not delivered</option>
+          </select>
+
+          <select
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            className="rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-medium text-neutral-200 outline-none focus:border-indigo-500"
+          >
+            <option value="all">Payment: All</option>
+            <option value="Paid">Paid</option>
+            <option value="Partial">Partial</option>
+            <option value="Unpaid">Unpaid</option>
+          </select>
+
+          {(deliveryFilter !== 'all' || paymentFilter !== 'all') && (
+            <button
+              type="button"
+              onClick={() => {
+                setDeliveryFilter('all');
+                setPaymentFilter('all');
+              }}
+              className="text-xs text-neutral-400 underline transition hover:text-white"
+            >
+              Clear filters
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowColumnForm((v) => !v)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-indigo-500/50 px-4 py-2 text-xs font-medium text-indigo-400 transition hover:bg-indigo-500/10"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add column
+          </button>
+        </div>
+
+        {showColumnForm && (
+          <form
+            onSubmit={handleAddColumn}
+            className="mb-4 grid grid-cols-1 gap-4 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5 sm:grid-cols-3"
+          >
+            <Field label="Column name">
+              <input
+                type="text"
+                value={colForm.name}
+                onChange={(e) => setColForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Video length"
+                className="input-base"
+              />
+            </Field>
+
+            <Field label="Type">
+              <select
+                value={colForm.type}
+                onChange={(e) => setColForm((f) => ({ ...f, type: e.target.value }))}
+                className="input-base"
+              >
+                {COLUMN_TYPES.map((t) => (
+                  <option key={t.value} value={t.value} className="bg-neutral-900">
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {colForm.type === 'dropdown' && (
+              <Field label="Options (comma separated)">
+                <input
+                  type="text"
+                  value={colForm.options}
+                  onChange={(e) => setColForm((f) => ({ ...f, options: e.target.value }))}
+                  placeholder="e.g. Reel, YouTube, Ad"
+                  className="input-base"
+                />
+              </Field>
+            )}
+
+            {colFormError && (
+              <p className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-400 sm:col-span-3">
+                {colFormError}
+              </p>
+            )}
+
+            <div className="flex gap-3 sm:col-span-3">
+              <button
+                type="submit"
+                disabled={colSaving}
+                className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-60"
+              >
+                {colSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Create column
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowColumnForm(false)}
+                className="rounded-full border border-neutral-700 px-5 py-2.5 text-sm font-medium text-neutral-300 transition hover:border-neutral-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {columnsError && (
+          <p className="mb-4 rounded-lg border border-yellow-900/50 bg-yellow-950/40 px-4 py-2 text-sm text-yellow-400">
+            Custom columns aren't set up yet. Run the SQL for this feature in Supabase ({columnsError}).
+          </p>
+        )}
 
         {loadingList ? (
           <div className="space-y-3">
@@ -833,11 +1246,34 @@ function ProjectTracker() {
                   <th className="px-4 py-3 font-medium">Payment</th>
                   <th className="px-4 py-3 font-medium">Deadline</th>
                   <th className="px-4 py-3 font-medium">Notes</th>
+                  {columns.map((col) => (
+                    <th key={col.id} className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-2">
+                        <span>{col.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRenameColumn(col)}
+                          title="Rename column"
+                          className="text-neutral-600 transition hover:text-indigo-400"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteColumn(col)}
+                          title="Delete column"
+                          className="text-neutral-600 transition hover:text-red-400"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </th>
+                  ))}
                   <th className="px-4 py-3 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800">
-                {items.map((item) => (
+                {visibleItems.map((item) => (
                   <tr key={item.id} className="bg-neutral-900/20 transition hover:bg-neutral-900/50">
                     <td className="px-4 py-3 font-medium text-white">
                       <input
@@ -908,6 +1344,15 @@ function ProjectTracker() {
                         className="w-full bg-transparent text-neutral-400 outline-none placeholder-neutral-700 focus:border-b focus:border-indigo-500"
                       />
                     </td>
+                    {columns.map((col) => (
+                      <td key={col.id} className="px-4 py-3">
+                        <CustomCell
+                          col={col}
+                          value={(item.custom_data || {})[col.id]}
+                          onChange={(value) => updateCustom(item, col.id, value)}
+                        />
+                      </td>
+                    ))}
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => handleDelete(item.id)}
@@ -923,6 +1368,16 @@ function ProjectTracker() {
                     </td>
                   </tr>
                 ))}
+                {visibleItems.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7 + columns.length}
+                      className="px-4 py-8 text-center text-sm text-neutral-500"
+                    >
+                      No projects match these filters.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1986,5 +2441,148 @@ function Field({ label, children, className = '' }) {
       </span>
       {children}
     </label>
+  );
+}
+
+/* ============================================================
+   Custom tracker column cells
+   ============================================================ */
+
+function CustomCell({ col, value, onChange }) {
+  const base =
+    'w-full bg-transparent text-neutral-300 outline-none placeholder-neutral-700 focus:border-b focus:border-indigo-500';
+
+  if (col.type === 'date') {
+    return (
+      <input
+        type="date"
+        defaultValue={value || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="bg-transparent text-neutral-400 outline-none [color-scheme:dark]"
+      />
+    );
+  }
+
+  if (col.type === 'duration') {
+    return <DurationInput value={value} onChange={onChange} />;
+  }
+
+  if (col.type === 'money' || col.type === 'number') {
+    return (
+      <div className="flex items-center gap-1 text-neutral-300">
+        {col.type === 'money' && <span className="text-neutral-500">৳</span>}
+        <input
+          type="number"
+          min="0"
+          step="any"
+          defaultValue={value ?? ''}
+          onBlur={(e) => {
+            const next = e.target.value === '' ? null : Number(e.target.value);
+            if (next !== (value ?? null)) onChange(next);
+          }}
+          placeholder="0"
+          className={`${base} min-w-[80px]`}
+        />
+      </div>
+    );
+  }
+
+  if (col.type === 'checkbox') {
+    return (
+      <input
+        type="checkbox"
+        checked={!!value}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 cursor-pointer accent-indigo-500"
+      />
+    );
+  }
+
+  if (col.type === 'dropdown') {
+    return (
+      <select
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="rounded-full border border-neutral-700 bg-neutral-800/60 px-3 py-1.5 text-xs text-neutral-200 outline-none"
+      >
+        <option value="" className="bg-neutral-900">
+          —
+        </option>
+        {(col.options || []).map((opt) => (
+          <option key={opt} value={opt} className="bg-neutral-900 text-white">
+            {opt}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  // text and link
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="text"
+        defaultValue={value || ''}
+        onBlur={(e) => {
+          if (e.target.value !== (value || '')) onChange(e.target.value || null);
+        }}
+        placeholder="—"
+        className={base}
+      />
+      {col.type === 'link' && value && (
+        <a
+          href={value}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 text-xs text-indigo-400 hover:underline"
+        >
+          Open
+        </a>
+      )}
+    </div>
+  );
+}
+
+function DurationInput({ value, onChange }) {
+  const total = Number(value) || 0;
+  const [mins, setMins] = useState(total ? String(Math.floor(total / 60)) : '');
+  const [secs, setSecs] = useState(total ? String(total % 60) : '');
+
+  function commit() {
+    const m = parseInt(mins, 10) || 0;
+    const s = parseInt(secs, 10) || 0;
+    const t = m * 60 + s; // e.g. 0 min 90 sec becomes 1 min 30 sec
+    setMins(t ? String(Math.floor(t / 60)) : '');
+    setSecs(t ? String(t % 60) : '');
+    const next = t || null;
+    if (next !== (total || null)) onChange(next);
+  }
+
+  const boxClass =
+    'w-12 rounded-md border border-neutral-700 bg-neutral-900 px-1.5 py-1 text-right text-sm text-neutral-200 outline-none focus:border-indigo-500';
+
+  return (
+    <div className="flex items-center gap-1 whitespace-nowrap text-neutral-500">
+      <input
+        type="number"
+        min="0"
+        value={mins}
+        onChange={(e) => setMins(e.target.value)}
+        onBlur={commit}
+        placeholder="0"
+        className={boxClass}
+      />
+      <span className="text-xs">min</span>
+      <input
+        type="number"
+        min="0"
+        value={secs}
+        onChange={(e) => setSecs(e.target.value)}
+        onBlur={commit}
+        placeholder="0"
+        className={boxClass}
+      />
+      <span className="text-xs">sec</span>
+    </div>
   );
 }
