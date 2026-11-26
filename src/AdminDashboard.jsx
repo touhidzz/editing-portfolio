@@ -14,6 +14,7 @@ import {
   Upload,
   FileText,
   Copy,
+  Download,
 } from 'lucide-react';
 
 function formatMoney(n) {
@@ -234,6 +235,12 @@ export default function AdminDashboard() {
             icon={FileText}
             label="Invoices"
           />
+          <TabButton
+            active={activeTab === 'unpaid'}
+            onClick={() => setActiveTab('unpaid')}
+            icon={Download}
+            label="Unpaid List"
+          />
         </div>
       </header>
 
@@ -243,6 +250,7 @@ export default function AdminDashboard() {
         {activeTab === 'settings' && <SiteSettings />}
         {activeTab === 'analytics' && <SiteAnalytics />}
         {activeTab === 'invoices' && <InvoiceManager />}
+        {activeTab === 'unpaid' && <UnpaidList />}
       </main>
     </div>
   );
@@ -2585,4 +2593,419 @@ function DurationInput({ value, onChange }) {
       <span className="text-xs">sec</span>
     </div>
   );
+}
+
+/* ============================================================
+   TAB 6: Unpaid List (admin only, linked to the Project Tracker)
+   Shows only: project name, video length, payment status.
+   Client names, notes, deadlines and amounts are never shown.
+   ============================================================ */
+
+const IMAGE_FONT =
+  "'Inter', 'Noto Sans Bengali', 'Hind Siliguri', system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+function UnpaidList() {
+  const [items, setItems] = useState([]);
+  const [columns, setColumns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [clientFilter, setClientFilter] = useState('all');
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setLoadError(null);
+
+    const [trk, cols] = await Promise.all([
+      supabase
+        .from('project_tracker')
+        .select('id, project_name, client_name, status, payment_status, custom_data')
+        .order('created_at', { ascending: true }),
+      supabase.from('tracker_columns').select('*').order('position', { ascending: true }),
+    ]);
+
+    if (trk.error) {
+      setLoadError(trk.error.message);
+    } else {
+      setItems(trk.data || []);
+    }
+    // If columns can't load, we still show the list (just without lengths)
+    setColumns(cols.error ? [] : cols.data || []);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const durationCol = columns.find((c) => c.type === 'duration') || null;
+
+  const unpaid = items.filter(
+    (i) => i.payment_status !== 'Paid' && i.status !== 'Cancelled'
+  );
+
+  const clients = Array.from(
+    new Set(unpaid.map((i) => (i.client_name || '').trim()).filter(Boolean))
+  ).sort();
+
+  const shown = unpaid.filter(
+    (i) => clientFilter === 'all' || (i.client_name || '').trim() === clientFilter
+  );
+
+  const rows = shown.map((i) => ({
+    name: i.project_name,
+    length: durationCol ? formatDuration((i.custom_data || {})[durationCol.id]) : '',
+    payment: i.payment_status || 'Unpaid',
+  }));
+
+  function handleDownload() {
+    if (rows.length === 0) return;
+    setBusy(true);
+    try {
+      const canvas = drawUnpaidImage({
+        rows,
+        client: clientFilter === 'all' ? '' : clientFilter,
+        showLength: !!durationCol,
+      });
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          alert('Could not create the image. Please try again.');
+          setBusy(false);
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const who = clientFilter === 'all' ? 'all' : clientFilter.replace(/[^\w\u0980-\u09FF-]+/g, '-');
+        a.href = url;
+        a.download = `unpaid-projects-${who}-${new Date().toISOString().slice(0, 10)}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setBusy(false);
+      }, 'image/png');
+    } catch (err) {
+      alert(`Could not create the image: ${err.message}`);
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="h-40 animate-pulse rounded-2xl bg-neutral-900/60" />;
+  }
+
+  if (loadError) {
+    return (
+      <p className="rounded-lg border border-red-900/50 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        Couldn't load the list: {loadError}
+      </p>
+    );
+  }
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-base font-semibold text-white sm:text-lg">
+          Unpaid Projects
+          <span className="ml-3 text-xs font-normal text-neutral-500">
+            {rows.length} pending
+          </span>
+        </h2>
+
+        <select
+          value={clientFilter}
+          onChange={(e) => setClientFilter(e.target.value)}
+          className="rounded-full border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-medium text-neutral-200 outline-none focus:border-indigo-500"
+        >
+          <option value="all">All clients</option>
+          {clients.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={busy || rows.length === 0}
+          className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Download as image
+        </button>
+      </div>
+
+      {!durationCol && (
+        <p className="mb-4 rounded-lg border border-yellow-900/50 bg-yellow-950/40 px-4 py-2 text-sm text-yellow-400">
+          Video length isn't showing yet. In Project Tracker, add a column of type "Video length"
+          and fill it in. It will appear here automatically.
+        </p>
+      )}
+
+      {rows.length === 0 ? (
+        <p className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-10 text-center text-sm text-neutral-500">
+          Nothing unpaid. 🎉
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-neutral-800">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-neutral-800 bg-neutral-900/60 text-xs uppercase tracking-wide text-neutral-500">
+                <th className="px-4 py-3 font-medium">#</th>
+                <th className="px-4 py-3 font-medium">Project</th>
+                <th className="px-4 py-3 font-medium">Length</th>
+                <th className="px-4 py-3 font-medium">Payment</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800">
+              {rows.map((row, idx) => (
+                <tr key={idx} className="bg-neutral-900/20">
+                  <td className="px-4 py-3 text-neutral-500">{idx + 1}</td>
+                  <td className="px-4 py-3 font-medium text-white">{row.name}</td>
+                  <td className="px-4 py-3 text-neutral-300">{row.length || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                        row.payment === 'Partial'
+                          ? 'border-yellow-900/50 bg-yellow-950/40 text-yellow-400'
+                          : 'border-red-900/50 bg-red-950/40 text-red-400'
+                      }`}
+                    >
+                      {row.payment}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="mt-3 text-xs text-neutral-600">
+        This list updates itself from the Project Tracker. Mark a project Paid there and it
+        disappears from here. The downloaded image shows only the project name, length and
+        payment status.
+      </p>
+    </section>
+  );
+}
+
+// Splits text into at most maxLines lines that fit maxWidth (adds … if cut)
+function wrapText(ctx, text, maxWidth, maxLines) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+
+  for (let w of words) {
+    while (ctx.measureText(w).width > maxWidth) {
+      let cut = w.length;
+      while (cut > 1 && ctx.measureText(w.slice(0, cut)).width > maxWidth) cut--;
+      if (line) {
+        lines.push(line);
+        line = '';
+      }
+      lines.push(w.slice(0, cut));
+      w = w.slice(cut);
+    }
+    const test = line ? `${line} ${w}` : w;
+    if (ctx.measureText(test).width <= maxWidth) {
+      line = test;
+    } else {
+      if (line) lines.push(line);
+      line = w;
+    }
+  }
+  if (line) lines.push(line);
+
+  if (lines.length > maxLines) {
+    let last = lines[maxLines - 1];
+    while (last.length > 1 && ctx.measureText(`${last}…`).width > maxWidth) {
+      last = last.slice(0, -1);
+    }
+    lines.length = maxLines;
+    lines[maxLines - 1] = `${last}…`;
+  }
+  return lines;
+}
+
+function roundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Draws the styled "pending payments" picture and returns the canvas
+function drawUnpaidImage({ rows, client, showLength }) {
+  const W = 1080;
+  const PAD = 56;
+  const ROW_H = 124;
+  const HEADER_H = client ? 340 : 290;
+  const TABLE_HEAD_H = 84;
+  const CARD_TOP = HEADER_H - 40;
+  const CARD_H = TABLE_HEAD_H + rows.length * ROW_H + 24;
+  const FOOTER_H = 150;
+  const H = CARD_TOP + CARD_H + FOOTER_H;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.textBaseline = 'middle';
+
+  // Page background
+  ctx.fillStyle = '#eef2ff';
+  ctx.fillRect(0, 0, W, H);
+
+  // Header gradient
+  const grad = ctx.createLinearGradient(0, 0, W, HEADER_H);
+  grad.addColorStop(0, '#4338ca');
+  grad.addColorStop(1, '#7c3aed');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, HEADER_H);
+
+  // Soft decorative circles
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.beginPath();
+  ctx.arc(W - 90, 40, 190, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(W - 260, HEADER_H - 20, 110, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Brand
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = `700 28px ${IMAGE_FONT}`;
+  ctx.fillText('P I X E L   N A R R A T I V E', PAD, 70);
+
+  // Title
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `800 68px ${IMAGE_FONT}`;
+  ctx.fillText('Pending Payments', PAD, 152);
+
+  // Subtitle (client + date)
+  ctx.font = `500 30px ${IMAGE_FONT}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  let subY = 214;
+  if (client) {
+    const clientLines = wrapText(ctx, `For: ${client}`, W - PAD * 2, 1);
+    ctx.fillText(clientLines[0], PAD, subY);
+    subY += 46;
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = `400 26px ${IMAGE_FONT}`;
+  ctx.fillText(
+    new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }),
+    PAD,
+    subY
+  );
+
+  // Card
+  const cardX = PAD - 16;
+  const cardW = W - (PAD - 16) * 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(67, 56, 202, 0.18)';
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = 14;
+  ctx.fillStyle = '#ffffff';
+  roundedRect(ctx, cardX, CARD_TOP, cardW, CARD_H, 32);
+  ctx.fill();
+  ctx.restore();
+
+  const innerL = cardX + 40;
+  const innerR = cardX + cardW - 40;
+  const pillW = 160;
+  const pillX = innerR - pillW;
+  const lengthRight = pillX - 36;
+  const nameX = innerL + 64;
+  const nameMax = (showLength ? lengthRight - 150 : pillX - 30) - nameX;
+
+  // Column headings
+  const headY = CARD_TOP + TABLE_HEAD_H / 2 + 4;
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = `700 22px ${IMAGE_FONT}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('PROJECT', nameX, headY);
+  if (showLength) {
+    ctx.textAlign = 'right';
+    ctx.fillText('LENGTH', lengthRight, headY);
+  }
+  ctx.textAlign = 'center';
+  ctx.fillText('STATUS', pillX + pillW / 2, headY);
+
+  // Rows
+  rows.forEach((row, i) => {
+    const top = CARD_TOP + TABLE_HEAD_H + i * ROW_H;
+    const midY = top + ROW_H / 2;
+
+    // Divider
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(innerL, top);
+    ctx.lineTo(innerR, top);
+    ctx.stroke();
+
+    // Number badge
+    ctx.fillStyle = '#e0e7ff';
+    ctx.beginPath();
+    ctx.arc(innerL + 24, midY, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#4338ca';
+    ctx.font = `700 24px ${IMAGE_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillText(String(i + 1), innerL + 24, midY + 1);
+
+    // Project name (up to 2 lines)
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `600 32px ${IMAGE_FONT}`;
+    ctx.textAlign = 'left';
+    const lines = wrapText(ctx, row.name, nameMax, 2);
+    const lineH = 42;
+    const startY = midY - ((lines.length - 1) * lineH) / 2;
+    lines.forEach((ln, li) => ctx.fillText(ln, nameX, startY + li * lineH));
+
+    // Length
+    if (showLength) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = row.length ? '#334155' : '#cbd5e1';
+      ctx.font = `500 30px ${IMAGE_FONT}`;
+      ctx.fillText(row.length || '—', lengthRight, midY);
+    }
+
+    // Status pill
+    const partial = row.payment === 'Partial';
+    ctx.fillStyle = partial ? '#fef3c7' : '#fee2e2';
+    roundedRect(ctx, pillX, midY - 26, pillW, 52, 26);
+    ctx.fill();
+    ctx.fillStyle = partial ? '#b45309' : '#dc2626';
+    ctx.font = `700 24px ${IMAGE_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillText(row.payment, pillX + pillW / 2, midY + 1);
+  });
+
+  // Footer summary
+  const footY = CARD_TOP + CARD_H + 70;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#312e81';
+  ctx.font = `700 34px ${IMAGE_FONT}`;
+  ctx.fillText(
+    `${rows.length} ${rows.length === 1 ? 'project' : 'projects'} pending`,
+    W / 2,
+    footY
+  );
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = `400 24px ${IMAGE_FONT}`;
+  ctx.fillText('Thank you for your support', W / 2, footY + 52);
+
+  return canvas;
 }
